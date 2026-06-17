@@ -1,0 +1,1070 @@
+// STARRIA — Prisma Schema
+// Architecture-only: models are complete, no business logic yet.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPPORTER
+  STAR
+  ADMIN
+}
+
+enum StarTier {
+  RISING
+  VERIFIED
+  ELITE
+}
+
+enum TapType {
+  COIN_GIFT
+  FIAT_TIP
+  SUBSCRIPTION
+}
+
+enum TapStatus {
+  PENDING
+  COMPLETED
+  REFUNDED
+  FAILED
+}
+
+enum EventStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELLED
+}
+
+enum EventType {
+  LIVE_STREAM
+  REPLAY
+  CLASS
+  SHOW
+}
+
+enum ArenaStatus {
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+enum WalletEntryType {
+  CREDIT
+  DEBIT
+}
+
+enum NotificationChannel {
+  IN_APP
+  PUSH
+  EMAIL
+  SMS
+}
+
+enum ModerationCaseStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  ESCALATED
+  DISMISSED
+}
+
+enum MediaScanStatus {
+  PENDING
+  SCAN_CLEAN
+  COMPLETED
+  FLAGGED
+  REJECTED
+  QUARANTINED
+}
+
+enum ContentType {
+  VIDEO
+  IMAGE
+  AUDIO
+  DOCUMENT
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CORE: USERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  username     String   @unique
+  displayName  String
+  avatarUrl    String?
+  role         UserRole @default(SUPPORTER)
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  starProfile             StarProfile?
+  supporterProfile        SupporterProfile?
+  wallet                  Wallet?
+  sentTaps                Tap[]                   @relation("TapSender")
+  receivedTaps            Tap[]                   @relation("TapReceiver")
+  notifications           Notification[]
+  watchSessions           WatchSession[]
+  feedEngagements         FeedEngagement[]
+  moderationReports       ModerationReport[]      @relation("Reporter")
+  mediaUploads            MediaUpload[]
+  ticketPurchases         TicketPurchase[]
+  arenaVoteResponses      ArenaVoteResponse[]
+  changedStarHistories    StarHistory[]           @relation("StarHistoryChangedBy")
+  grantedGoldStarProfiles GoldStarProfile[]       @relation("GoldStarGrantedBy")
+  revokedGoldStarProfiles GoldStarProfile[]       @relation("GoldStarRevokedBy")
+  authorizedBoosts        RegionalBoost[]         @relation("BoostAuthorizer")
+  creatorHouseMemberships CreatorHouseMember[]
+  attributedTickets       TicketAttribution[]     @relation("TicketAttributedTo")
+  createdArenaVotes       ArenaVote[]
+  uploadedVideos          Video[]                 @relation("VideoUploader")
+  videoWatches            VideoWatch[]
+  contentTaps             ContentTap[]
+
+  @@index([email])
+  @@index([username])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STARS (creators / performers)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model StarProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier        StarTier @default(RISING)
+  bio         String?
+  category    String   @default("general")
+  tags        String[]
+  isVerified  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  hostedEvents               Event[]
+  hostedArenas               Arena[]
+  aiCreatorProfile           AiCreatorProfile?
+  goldStarProfile            GoldStarProfile?
+  starHistories              StarHistory[]
+  targetSupportRelationships SupportRelationship[]   @relation("SupportRelationshipStar")
+  tapStorms                  TapStorm[]
+  posterGenerations          PosterGeneration[]
+  ownedCreatorHouses         CreatorHouse[]          @relation("CreatorHouseOwner")
+  creatorHouseMemberships    CreatorHouseMember[]    @relation("CreatorHouseMemberStar")
+  creatorSeasons             CreatorSeason[]
+  videos                     Video[]
+
+  @@index([category])
+  @@index([tier])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUPPORTERS (fans)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model SupporterProfile {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName         String   @default("")
+  avatarUrl           String?
+  bio                 String?
+  tier                String   @default("free") // free | fan | superfan | ultra
+  lifetimeCoinsSpent  Int      @default(0)
+  lifetimeFiatSpent   Int      @default(0) // minor units
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  subscriptions        Subscription[]
+  supportRelationships SupportRelationship[] @relation("SupportRelationshipSupporter")
+}
+
+model Subscription {
+  id                 String           @id @default(uuid())
+  supporterProfileId String
+  supporterProfile   SupporterProfile @relation(fields: [supporterProfileId], references: [id])
+  starProfileId      String
+  tier               String           @default("basic") // basic | premium | vip
+  status             String           @default("active") // active | paused | cancelled | expired
+  startedAt          DateTime         @default(now())
+  endsAt             DateTime?
+  cancelledAt        DateTime?
+  renewalEnabled     Boolean          @default(true)
+  idempotencyKey     String           @unique
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([supporterProfileId, status])
+  @@index([starProfileId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAPS (micropayments / gifts)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Tap {
+  id           String    @id @default(uuid())
+  senderId     String
+  sender       User      @relation("TapSender", fields: [senderId], references: [id])
+  receiverId   String
+  receiver     User      @relation("TapReceiver", fields: [receiverId], references: [id])
+  type         TapType
+  status       TapStatus @default(PENDING)
+  coinAmount   Int?
+  fiatAmount   Int?      // stored in minor units (cents)
+  currency     String    @default("USD")
+  message      String?
+  contextType  String?   // 'event' | 'arena' | 'profile'
+  contextId    String?
+  idempotencyKey String  @unique
+  createdAt    DateTime  @default(now())
+  settledAt    DateTime?
+
+  walletEntries WalletEntry[]
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([contextType, contextId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EVENTS (live streams, replays, classes)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Event {
+  id            String      @id @default(uuid())
+  starProfileId String
+  starProfile   StarProfile @relation(fields: [starProfileId], references: [id])
+  title         String
+  description   String?
+  type          EventType   @default(LIVE_STREAM)
+  status        EventStatus @default(SCHEDULED)
+  scheduledAt   DateTime?
+  startedAt     DateTime?
+  endedAt       DateTime?
+  thumbnailUrl  String?
+  replayUrl     String?
+  category      String      @default("general")
+  tags          String[]
+  arenaId       String?
+  arena         Arena?      @relation(fields: [arenaId], references: [id])
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  watchSessions     WatchSession[]
+  contentIndex      ContentIndex?
+  ticketPurchases   TicketPurchase[]
+  posterGenerations PosterGeneration[]
+
+  @@index([starProfileId])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ARENAS (rooms / venues)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Arena {
+  id            String      @id @default(uuid())
+  starProfileId String
+  starProfile   StarProfile @relation(fields: [starProfileId], references: [id])
+  name          String
+  description   String?
+  status        ArenaStatus @default(ACTIVE)
+  livekitRoom   String?     @unique
+  maxParticipants Int       @default(500)
+  isPrivate     Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  events     Event[]
+  arenaVotes ArenaVote[]
+
+  @@index([starProfileId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WALLET & LEDGER (from @starria/wallet-core)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Wallet {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coinBalance Int    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries WalletEntry[]
+}
+
+model WalletEntry {
+  id           String          @id @default(uuid())
+  walletId     String
+  wallet       Wallet          @relation(fields: [walletId], references: [id])
+  type         WalletEntryType
+  coinAmount   Int?
+  fiatAmount   Int?
+  currency     String          @default("USD")
+  description  String?
+  tapId        String?
+  tap          Tap?            @relation(fields: [tapId], references: [id])
+  previousHash String?
+  hash         String
+  idempotencyKey String        @unique
+  createdAt    DateTime        @default(now())
+
+  @@index([walletId])
+  @@index([tapId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATIONS (from @starria/notification-core)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String              @id @default(uuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  channel   NotificationChannel @default(IN_APP)
+  title     String?
+  body      String
+  data      Json?
+  isRead    Boolean             @default(false)
+  readAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODERATION (from @starria/moderation-core)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ModerationReport {
+  id           String               @id @default(uuid())
+  reporterId   String
+  reporter     User                 @relation("Reporter", fields: [reporterId], references: [id])
+  targetType   String               // 'user' | 'event' | 'arena' | 'tap'
+  targetId     String
+  caseType     String
+  reason       String?
+  status       ModerationCaseStatus @default(OPEN)
+  resolvedAt   DateTime?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@index([targetType, targetId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ANALYTICS (from @starria/analytics-core)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model WatchSession {
+  id                     String    @id @default(uuid())
+  userId                 String
+  user                   User      @relation(fields: [userId], references: [id])
+  contentId              String
+  contentType            String    // 'event' | 'replay'
+  event                  Event?    @relation(fields: [contentId], references: [id])
+  joinedAt               DateTime  @default(now())
+  leftAt                 DateTime?
+  lastPositionSeconds    Int?
+  contentDurationSeconds Int?
+
+  @@index([contentId, contentType])
+  @@index([userId])
+}
+
+model FeedEngagement {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  contentId   String
+  contentType String
+  action      String   // 'view' | 'like' | 'share' | 'skip'
+  category    String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([contentId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MEDIA (from @starria/video-core)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model MediaUpload {
+  id          String          @id @default(uuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id])
+  purpose     String
+  fileName    String
+  contentType String
+  storageKey  String
+  fileUrl     String?
+  status      MediaScanStatus @default(PENDING)
+  createdAt   DateTime        @default(now())
+  expiresAt   DateTime?
+  completedAt DateTime?
+
+  @@index([userId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEARCH (from @starria/search-core)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ContentIndex {
+  id           String   @id @default(uuid())
+  contentType  String
+  contentId    String   @unique
+  event        Event?   @relation(fields: [contentId], references: [id])
+  title        String
+  body         String?
+  tags         String[]
+  languageCode String   @default("en")
+  score        Float    @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([contentType, contentId])
+  @@index([contentType])
+  @@index([score])
+}
+
+model RecommendationFeedback {
+  id               String   @id @default(uuid())
+  userId           String
+  contentIndexId   String
+  action           String   // 'seen' | 'clicked' | 'dismissed' | 'reported'
+  reason           String?
+  context          Json?
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+  @@index([contentIndexId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI CREATOR TOOLS
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AiCreatorProfile {
+  id            String      @id @default(uuid())
+  starProfileId String      @unique
+  starProfile   StarProfile @relation(fields: [starProfileId], references: [id])
+  preferences   Json?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  generations AiGeneration[]
+}
+
+model AiGeneration {
+  id               String           @id @default(uuid())
+  aiCreatorProfileId String
+  aiCreatorProfile AiCreatorProfile @relation(fields: [aiCreatorProfileId], references: [id])
+  type             String           // 'caption' | 'thumbnail' | 'title' | 'script' | 'hashtags'
+  prompt           String
+  result           String?
+  model            String?
+  tokensUsed       Int?
+  createdAt        DateTime         @default(now())
+
+  @@index([aiCreatorProfileId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW ENUMS — domain expansion (2026)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum SupportRelationshipStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+enum SupportMilestoneType {
+  FIRST_TAP
+  COIN_THRESHOLD
+  TAP_COUNT
+  STREAK
+  ANNIVERSARY
+}
+
+enum GoldStarStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum StarHistoryEventType {
+  TIER_CHANGE
+  VERIFICATION_APPROVED
+  VERIFICATION_REJECTED
+  SUSPENSION
+  REACTIVATION
+  PROFILE_UPDATE
+  GOLD_STAR_GRANTED
+  GOLD_STAR_REVOKED
+}
+
+enum TapStormStatus {
+  UPCOMING
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+enum TicketPurchaseStatus {
+  PENDING
+  CONFIRMED
+  REFUNDED
+  CANCELLED
+}
+
+enum TicketAttributionType {
+  DIRECT
+  REFERRAL
+  ORGANIC
+  PROMO
+}
+
+enum PosterGenerationStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum CreatorHouseStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum CreatorSeasonStatus {
+  UPCOMING
+  ACTIVE
+  ENDED
+}
+
+enum ArenaVoteStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum RegionalEntityType {
+  STAR
+  EVENT
+  ARENA
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUPPORT GRAPH
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Richer relationship between a supporter and a star — tracks lifetime spend,
+// milestone level, and status independently of individual Subscriptions.
+model SupportRelationship {
+  id                  String                   @id @default(uuid())
+  supporterProfileId  String
+  supporterProfile    SupporterProfile         @relation("SupportRelationshipSupporter", fields: [supporterProfileId], references: [id])
+  starProfileId       String
+  starProfile         StarProfile              @relation("SupportRelationshipStar", fields: [starProfileId], references: [id])
+  status              SupportRelationshipStatus @default(ACTIVE)
+  startedAt           DateTime                 @default(now())
+  totalCoinsGifted    Int                      @default(0)
+  totalFiatGifted     Int                      @default(0) // minor units
+  tapCount            Int                      @default(0)
+  milestoneLevel      Int                      @default(0)
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  milestones SupportMilestone[]
+  streak     SupportStreak?
+
+  @@unique([supporterProfileId, starProfileId])
+  @@index([starProfileId])
+  @@index([status])
+}
+
+// Tracks daily gifting continuity between a supporter and a star.
+// Resets when more than 25 hours elapse between consecutive gifts.
+model SupportStreak {
+  id                    String              @id @default(uuid())
+  supportRelationshipId String              @unique
+  supportRelationship   SupportRelationship @relation(fields: [supportRelationshipId], references: [id], onDelete: Cascade)
+  currentStreakDays     Int                 @default(1)
+  longestStreakDays     Int                 @default(1)
+  lastGiftAt            DateTime
+  streakStartedAt       DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([currentStreakDays])
+}
+
+// Individual milestone events within a SupportRelationship.
+model SupportMilestone {
+  id                   String               @id @default(uuid())
+  supportRelationshipId String
+  supportRelationship  SupportRelationship  @relation(fields: [supportRelationshipId], references: [id], onDelete: Cascade)
+  type                 SupportMilestoneType
+  thresholdValue       Int                  // the coins / tap count that was hit
+  achievedAt           DateTime             @default(now())
+  notifiedAt           DateTime?
+  metadata             Json?
+
+  @@index([supportRelationshipId])
+  @@index([type])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CREATOR STATUS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Premium creator badge granted by platform admins — separate from StarTier.
+model GoldStarProfile {
+  id              String         @id @default(uuid())
+  starProfileId   String         @unique
+  starProfile     StarProfile    @relation(fields: [starProfileId], references: [id], onDelete: Cascade)
+  status          GoldStarStatus @default(ACTIVE)
+  grantedAt       DateTime       @default(now())
+  grantedByUserId String
+  grantedBy       User           @relation("GoldStarGrantedBy", fields: [grantedByUserId], references: [id])
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  revokedByUserId String?
+  revokedBy       User?          @relation("GoldStarRevokedBy", fields: [revokedByUserId], references: [id])
+  reason          String?
+  benefits        Json?          // { prioritySupport, exclusiveBadge, boostMultiplier, … }
+
+  @@index([status])
+  @@index([grantedByUserId])
+}
+
+// Append-only audit log of significant changes to a StarProfile.
+model StarHistory {
+  id              String               @id @default(uuid())
+  starProfileId   String
+  starProfile     StarProfile          @relation(fields: [starProfileId], references: [id], onDelete: Cascade)
+  eventType       StarHistoryEventType
+  previousValue   Json?
+  newValue        Json?
+  changedByUserId String?
+  changedBy       User?                @relation("StarHistoryChangedBy", fields: [changedByUserId], references: [id])
+  changedAt       DateTime             @default(now())
+  reason          String?
+
+  @@index([starProfileId])
+  @@index([eventType])
+  @@index([changedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REGIONAL DISCOVERY
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Temporary visibility boost for a star, event, or arena in a specific region.
+model RegionalBoost {
+  id                String             @id @default(uuid())
+  entityType        RegionalEntityType
+  entityId          String             // polymorphic — no FK constraint
+  region            String             // ISO 3166-1 alpha-2 or custom region slug
+  boostScore        Float              @default(1.0)
+  isActive          Boolean            @default(true)
+  startedAt         DateTime           @default(now())
+  expiresAt         DateTime?
+  authorizedByUserId String
+  authorizedBy      User               @relation("BoostAuthorizer", fields: [authorizedByUserId], references: [id])
+  reason            String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([entityType, entityId])
+  @@index([region, isActive])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAP STORMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Coordinated tapping campaigns — supporters collectively hit a coin goal
+// within a time window. Displayed as a live progress bar in the arena/event.
+model TapStorm {
+  id                  String         @id @default(uuid())
+  starProfileId       String
+  starProfile         StarProfile    @relation(fields: [starProfileId], references: [id])
+  title               String
+  description         String?
+  contextType         String?        // 'event' | 'arena'
+  contextId           String?
+  startsAt            DateTime
+  endsAt              DateTime
+  goalCoins           Int
+  totalCoinsCollected Int            @default(0)
+  participantCount    Int            @default(0)
+  tapCount            Int            @default(0)
+  status              TapStormStatus @default(UPCOMING)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([starProfileId])
+  @@index([status])
+  @@index([startsAt, endsAt])
+  @@index([contextType, contextId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TICKETING
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Fiat purchase record for a ticketed event.
+model TicketPurchase {
+  id                    String               @id @default(uuid())
+  userId                String
+  user                  User                 @relation(fields: [userId], references: [id])
+  eventId               String
+  event                 Event                @relation(fields: [eventId], references: [id])
+  quantity              Int                  @default(1)
+  unitPriceFiatMinorUnits Int
+  currency              String               @default("NGN")
+  totalFiatMinorUnits   Int
+  status                TicketPurchaseStatus @default(PENDING)
+  reference             String
+  idempotencyKey        String               @unique
+  purchasedAt           DateTime             @default(now())
+  refundedAt            DateTime?
+  metadata              Json?
+
+  attribution TicketAttribution?
+
+  @@index([userId])
+  @@index([eventId])
+  @@index([status])
+  @@index([reference])
+}
+
+// Attribution chain for a ticket purchase (referrals, promo codes, campaigns).
+model TicketAttribution {
+  id                String                @id @default(uuid())
+  ticketPurchaseId  String                @unique
+  ticketPurchase    TicketPurchase        @relation(fields: [ticketPurchaseId], references: [id], onDelete: Cascade)
+  attributedToUserId String?
+  attributedTo      User?                 @relation("TicketAttributedTo", fields: [attributedToUserId], references: [id])
+  attributionType   TicketAttributionType @default(DIRECT)
+  promoCode         String?
+  campaignId        String?
+  metadata          Json?
+  createdAt         DateTime              @default(now())
+
+  @@index([attributedToUserId])
+  @@index([campaignId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI POSTER GENERATION
+// ─────────────────────────────────────────────────────────────────────────────
+
+// AI-generated promotional poster for a star or a specific event.
+model PosterGeneration {
+  id              String                 @id @default(uuid())
+  starProfileId   String
+  starProfile     StarProfile            @relation(fields: [starProfileId], references: [id])
+  eventId         String?
+  event           Event?                 @relation(fields: [eventId], references: [id])
+  prompt          String
+  style           String?                // 'bold' | 'minimal' | 'cinematic' | custom
+  resultImageUrl  String?
+  storageKey      String?
+  status          PosterGenerationStatus @default(PENDING)
+  model           String?
+  generationMs    Int?
+  createdAt       DateTime               @default(now())
+
+  @@index([starProfileId])
+  @@index([eventId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CREATOR HOUSES
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A named community of creators who collaborate and cross-promote.
+model CreatorHouse {
+  id                 String             @id @default(uuid())
+  name               String
+  slug               String             @unique
+  description        String?
+  avatarUrl          String?
+  bannerUrl          String?
+  ownerStarProfileId String
+  owner              StarProfile        @relation("CreatorHouseOwner", fields: [ownerStarProfileId], references: [id])
+  status             CreatorHouseStatus @default(ACTIVE)
+  memberCount        Int                @default(0)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  members CreatorHouseMember[]
+
+  @@index([ownerStarProfileId])
+  @@index([status])
+}
+
+// Membership record linking a StarProfile to a CreatorHouse.
+model CreatorHouseMember {
+  id             String       @id @default(uuid())
+  creatorHouseId String
+  creatorHouse   CreatorHouse @relation(fields: [creatorHouseId], references: [id], onDelete: Cascade)
+  starProfileId  String
+  starProfile    StarProfile  @relation("CreatorHouseMemberStar", fields: [starProfileId], references: [id])
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  role           String       @default("member") // 'owner' | 'admin' | 'member'
+  joinedAt       DateTime     @default(now())
+  leftAt         DateTime?
+
+  @@unique([creatorHouseId, starProfileId])
+  @@index([starProfileId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CREATOR SEASONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A themed content season for a creator — groups events, goals, and earnings
+// into a named campaign period.
+model CreatorSeason {
+  id               String              @id @default(uuid())
+  starProfileId    String
+  starProfile      StarProfile         @relation(fields: [starProfileId], references: [id])
+  name             String
+  number           Int
+  description      String?
+  coverImageUrl    String?
+  startsAt         DateTime
+  endsAt           DateTime
+  status           CreatorSeasonStatus @default(UPCOMING)
+  totalCoinsEarned Int                 @default(0)
+  totalEvents      Int                 @default(0)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@unique([starProfileId, number])
+  @@index([starProfileId])
+  @@index([status])
+  @@index([startsAt, endsAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ARENA VOTES
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Audience poll created inside an Arena (e.g., "What should we do next?").
+model ArenaVote {
+  id             String          @id @default(uuid())
+  arenaId        String
+  arena          Arena           @relation(fields: [arenaId], references: [id])
+  createdByUserId String
+  createdBy      User            @relation(fields: [createdByUserId], references: [id])
+  question       String
+  options        Json            // [{ id: string, text: string }]
+  status         ArenaVoteStatus @default(OPEN)
+  endsAt         DateTime?
+  totalVotes     Int             @default(0)
+  createdAt      DateTime        @default(now())
+  closedAt       DateTime?
+
+  responses ArenaVoteResponse[]
+
+  @@index([arenaId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Individual response to an ArenaVote — one per user per vote.
+model ArenaVoteResponse {
+  id          String    @id @default(uuid())
+  arenaVoteId String
+  arenaVote   ArenaVote @relation(fields: [arenaVoteId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  optionId    String    // references one of ArenaVote.options[].id
+  createdAt   DateTime  @default(now())
+
+  @@unique([arenaVoteId, userId])
+  @@index([arenaVoteId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VIDEO DISCOVERY (Sprint 2) — from @starria/video-core, @starria/discovery-core
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Genre {
+  COMEDY
+  AI_MOVIES
+  AI_SERIES
+  MUSIC
+  ANIMALS
+  ANIMATION
+  EDUCATION
+  LIFESTYLE
+}
+
+enum VideoStatus {
+  UPLOADING
+  PROCESSING
+  PUBLISHED
+  FAILED
+}
+
+// An uploaded short-form video — the core unit of discovery.
+model Video {
+  id              String      @id @default(uuid())
+  starProfileId   String
+  starProfile     StarProfile @relation(fields: [starProfileId], references: [id])
+  uploaderUserId  String
+  uploader        User        @relation("VideoUploader", fields: [uploaderUserId], references: [id])
+  title           String
+  description     String?
+  genre           Genre
+  country         String?     // ISO 3166-1 alpha-2
+  language        String?     // ISO 639-1
+  tags            String[]
+  status          VideoStatus @default(UPLOADING)
+  storageKey      String
+  playbackUrl     String?
+  thumbnailUrl    String?
+  durationSeconds Int?
+  width           Int?
+  height          Int?
+  viewCount       Int         @default(0)
+  tapCount        Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  publishedAt     DateTime?
+
+  watches        VideoWatch[]
+  contentTaps    ContentTap[]
+  discoveryScore DiscoveryScore?
+  regionalBoosts RegionalTapBoost[]
+  trendingScores TrendingScore[]
+
+  @@index([starProfileId])
+  @@index([genre, status])
+  @@index([country, status])
+  @@index([status, publishedAt])
+}
+
+// A single watch session of a video (view / completion / retention / watch time).
+model VideoWatch {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  videoId         String
+  video           Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  country         String?
+  region          String?
+  watchSeconds    Int       @default(0)
+  durationSeconds Int       @default(0)
+  retention       Float     @default(0) // 0..1
+  completed       Boolean   @default(false)
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+
+  @@index([videoId])
+  @@index([userId])
+  @@index([videoId, completed])
+}
+
+// A weighted discovery "tap" (upvote/like) — distinct from a payment Tap.
+model ContentTap {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  videoId    String
+  video      Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  weight     Float    @default(0)
+  trustScore Float    @default(0)
+  region     String   @default("XX")
+  country    String?
+  createdAt  DateTime @default(now())
+
+  @@index([videoId])
+  @@index([userId, videoId])
+  @@index([videoId, region])
+  @@index([videoId, createdAt])
+}
+
+// Per-video global discovery score with its component breakdown.
+model DiscoveryScore {
+  id                  String   @id @default(uuid())
+  videoId             String   @unique
+  video               Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  score               Float    @default(0)
+  watchTimeScore      Float    @default(0)
+  supportersScore     Float    @default(0)
+  tapVelocityScore    Float    @default(0)
+  retentionScore      Float    @default(0)
+  starMultiplierScore Float    @default(0)
+  updatedAt           DateTime @updatedAt
+
+  @@index([score])
+}
+
+// Per-(video, region) accumulated weighted-tap boost (time-decayed).
+model RegionalTapBoost {
+  id         String   @id @default(uuid())
+  videoId    String
+  video      Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  region     String
+  boostScore Float    @default(0)
+  tapCount   Int      @default(0)
+  lastTapAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([videoId, region])
+  @@index([region, boostScore])
+}
+
+// Per-(video, scope) trending rank. scope = 'GLOBAL' or a region/country code.
+model TrendingScore {
+  id        String   @id @default(uuid())
+  videoId   String
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  scope     String   @default("GLOBAL")
+  score     Float    @default(0)
+  rank      Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([videoId, scope])
+  @@index([scope, rank])
+  @@index([scope, score])
+}

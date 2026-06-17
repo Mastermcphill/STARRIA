@@ -1,0 +1,23 @@
+# Never copy host install/build artifacts into the build context — the image
+# installs and builds from the lockfile to keep builds reproducible.
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+
+# Local env & secrets (provided at runtime via compose env_file / environment)
+.env
+**/.env.local
+
+# Flutter app is not part of the API image
+apps/mobile
+
+# VCS / editor / OS noise
+.git
+.gitignore
+**/.DS_Store
+**/*.log
+
+# Tests & coverage are not needed in the image
+**/coverage
+**/*.spec.ts

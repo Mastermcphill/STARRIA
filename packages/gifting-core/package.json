@@ -1,0 +1,17 @@
+{
+  "name": "@starria/gifting-core",
+  "version": "0.1.0",
+  "description": "Gift sending, history, coin gifting, fiat gifting, and revenue split logic — extracted from LifeNest.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@starria/domain-events": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

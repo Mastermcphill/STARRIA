@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: starria-postgres
+    environment:
+      POSTGRES_USER: starria
+      POSTGRES_PASSWORD: starria
+      POSTGRES_DB: starria
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U starria"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: starria-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: starria-api
+    env_file: .env
+    # Container-network overrides (service names, not localhost). These take
+    # precedence over values from .env.
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://starria:starria@postgres:5432/starria
+      REDIS_URL: redis://redis:6379
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # NOTE: no source bind-mounts here — the production image runs the compiled
+    # dist/. Mounting ./apps/api or ./packages would shadow the built output and
+    # break `node dist/main.js`. Use a separate dev compose override for watch mode.
+
+volumes:
+  postgres_data:
+  redis_data:

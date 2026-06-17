@@ -1,0 +1,19 @@
+{
+  "name": "@starria/discovery-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Discovery matrix, tap-weight + ranking formulas, regional boosts, and trending for STARRIA video discovery.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@starria/domain-events": "workspace:*",
+    "@starria/geo-core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

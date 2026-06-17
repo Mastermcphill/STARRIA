@@ -1,0 +1,17 @@
+{
+  "name": "@starria/wallet-core",
+  "version": "0.1.0",
+  "description": "Wallet ledger, balances, transactions, withdrawals, and payment provider abstractions — extracted from LifeNest.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@starria/domain-events": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,69 @@
+name: starria
+description: STARRIA — Stars, Supporters, Taps, Events, Arenas
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Navigation
+  go_router: ^13.0.0
+
+  # State management
+  flutter_riverpod: ^2.5.0
+  riverpod_annotation: ^2.3.0
+
+  # Networking
+  dio: ^5.4.0
+  retrofit: ^4.1.0
+
+  # Auth / Storage
+  flutter_secure_storage: ^9.0.0
+  shared_preferences: ^2.2.0
+
+  # Live video (Arenas)
+  livekit_client: ^2.1.0
+
+  # UI
+  cached_network_image: ^3.3.0
+  shimmer: ^3.0.0
+  infinite_scroll_pagination: ^4.0.0
+
+  # Icons / assets
+  flutter_svg: ^2.0.0
+
+  # Push notifications
+  firebase_core: ^3.0.0
+  firebase_messaging: ^15.0.0
+
+  # Analytics
+  firebase_analytics: ^11.0.0
+
+  # Utilities
+  intl: ^0.19.0
+  uuid: ^4.3.0
+  equatable: ^2.0.5
+  freezed_annotation: ^2.4.0
+  json_annotation: ^4.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.0
+  freezed: ^2.5.0
+  json_serializable: ^6.8.0
+  riverpod_generator: ^2.4.0
+  retrofit_generator: ^8.1.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/

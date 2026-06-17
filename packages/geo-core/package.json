@@ -1,0 +1,16 @@
+{
+  "name": "@starria/geo-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Geo resolution (country → region), geo-diversity scoring, and locale utilities for STARRIA discovery.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --project tsconfig.json"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}
