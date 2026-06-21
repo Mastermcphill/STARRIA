@@ -18,6 +18,7 @@ datasource db {
 enum UserRole {
   SUPPORTER
   STAR
+  MODERATOR
   ADMIN
 }
 
@@ -41,6 +42,8 @@ enum TapStatus {
 }
 
 enum EventStatus {
+  DRAFT
+  PUBLISHED
   SCHEDULED
   LIVE
   ENDED
@@ -52,12 +55,88 @@ enum EventType {
   REPLAY
   CLASS
   SHOW
+  COMEDY_SHOW
+  AI_PREMIERE
+  RAP_BATTLE
+  SING_OFF
+  CREATOR_QA
+  YAP_BATTLE
+  SUPPORTER_ROOM
 }
 
 enum ArenaStatus {
   ACTIVE
   CLOSED
   ARCHIVED
+}
+
+// Sprint 8 — Battles & Creator Leagues
+enum BattleType {
+  RAP_BATTLE
+  SING_OFF
+  COMEDY_CLASH
+  YAP_BATTLE
+  AI_FILM_BATTLE
+  CREATOR_DUEL
+  TEAM_BATTLE
+}
+
+enum BattleStatus {
+  DRAFT
+  REGISTRATION
+  ACTIVE
+  VOTING
+  SETTLED
+  ARCHIVED
+}
+
+enum VotingMethod {
+  AUDIENCE
+  SUPPORTER_WEIGHTED
+  JUDGE
+  HYBRID
+}
+
+enum ArenaDivision {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+  DIAMOND
+  LEGEND
+}
+
+enum ArenaSeasonStatus {
+  UPCOMING
+  ACTIVE
+  ENDED
+}
+
+enum PrizePoolSource {
+  TICKETS
+  SPONSORSHIP
+  CREATOR_DEPOSIT
+  FAN_CONTRIBUTION
+}
+
+enum PrizeDistribution {
+  WINNER_TAKES_ALL
+  TOP_3_PAYOUT
+  SPLIT_PAYOUT
+}
+
+enum BattleParticipantRole {
+  CHALLENGER
+  DEFENDER
+  TEAM_MEMBER
+  JUDGE
+}
+
+enum HouseBattleStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
 }
 
 enum WalletEntryType {
@@ -96,6 +175,21 @@ enum ContentType {
   DOCUMENT
 }
 
+// Outcome of an automated content-safety scan.
+enum ContentScanStatus {
+  PENDING // queued, not yet scanned
+  ALLOWED // passed automated checks
+  FLAGGED // routed to human review
+  BLOCKED // auto-blocked (critical), takedown triggered
+  ERROR // provider error; left for retry / manual review
+}
+
+// What kind of payload was scanned.
+enum ContentScanKind {
+  TEXT
+  IMAGE
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CORE: USERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,6 +202,11 @@ model User {
   avatarUrl    String?
   role         UserRole @default(SUPPORTER)
   passwordHash String
+  // Account suspension (admin action). A suspended user is rejected at login
+  // and at the guard layer; the timestamp/reason form the audit trail.
+  isSuspended      Boolean   @default(false)
+  suspendedAt      DateTime?
+  suspensionReason String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -134,6 +233,11 @@ model User {
   uploadedVideos          Video[]                 @relation("VideoUploader")
   videoWatches            VideoWatch[]
   contentTaps             ContentTap[]
+  // Sprint 8
+  battleVotesCast         BattleVote[]            @relation("BattleVoteVoter")
+  prizeContributions      PrizePoolContribution[] @relation("PrizeContributor")
+  blocksMade              UserBlock[]             @relation("Blocker")
+  blocksReceived          UserBlock[]             @relation("Blocked")
 
   @@index([email])
   @@index([username])
@@ -144,16 +248,16 @@ model User {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model StarProfile {
-  id          String   @id @default(uuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tier        StarTier @default(RISING)
-  bio         String?
-  category    String   @default("general")
-  tags        String[]
-  isVerified  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier       StarTier @default(RISING)
+  bio        String?
+  category   String   @default("general")
+  tags       String[]
+  isVerified Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Relations
   hostedEvents               Event[]
@@ -161,13 +265,16 @@ model StarProfile {
   aiCreatorProfile           AiCreatorProfile?
   goldStarProfile            GoldStarProfile?
   starHistories              StarHistory[]
-  targetSupportRelationships SupportRelationship[]   @relation("SupportRelationshipStar")
+  targetSupportRelationships SupportRelationship[] @relation("SupportRelationshipStar")
   tapStorms                  TapStorm[]
   posterGenerations          PosterGeneration[]
-  ownedCreatorHouses         CreatorHouse[]          @relation("CreatorHouseOwner")
-  creatorHouseMemberships    CreatorHouseMember[]    @relation("CreatorHouseMemberStar")
+  ownedCreatorHouses         CreatorHouse[]        @relation("CreatorHouseOwner")
+  creatorHouseMemberships    CreatorHouseMember[]  @relation("CreatorHouseMemberStar")
   creatorSeasons             CreatorSeason[]
   videos                     Video[]
+  // Sprint 8
+  battleParticipations       BattleParticipant[]
+  creatorEloRecords          CreatorElo[]
 
   @@index([category])
   @@index([tier])
@@ -178,17 +285,17 @@ model StarProfile {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model SupporterProfile {
-  id                  String   @id @default(uuid())
-  userId              String   @unique
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  displayName         String   @default("")
-  avatarUrl           String?
-  bio                 String?
-  tier                String   @default("free") // free | fan | superfan | ultra
-  lifetimeCoinsSpent  Int      @default(0)
-  lifetimeFiatSpent   Int      @default(0) // minor units
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName        String   @default("")
+  avatarUrl          String?
+  bio                String?
+  tier               String   @default("free") // free | fan | superfan | ultra
+  lifetimeCoinsSpent Int      @default(0)
+  lifetimeFiatSpent  Int      @default(0) // minor units
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   subscriptions        Subscription[]
   supportRelationships SupportRelationship[] @relation("SupportRelationshipSupporter")
@@ -218,22 +325,22 @@ model Subscription {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Tap {
-  id           String    @id @default(uuid())
-  senderId     String
-  sender       User      @relation("TapSender", fields: [senderId], references: [id])
-  receiverId   String
-  receiver     User      @relation("TapReceiver", fields: [receiverId], references: [id])
-  type         TapType
-  status       TapStatus @default(PENDING)
-  coinAmount   Int?
-  fiatAmount   Int?      // stored in minor units (cents)
-  currency     String    @default("USD")
-  message      String?
-  contextType  String?   // 'event' | 'arena' | 'profile'
-  contextId    String?
-  idempotencyKey String  @unique
-  createdAt    DateTime  @default(now())
-  settledAt    DateTime?
+  id             String    @id @default(uuid())
+  senderId       String
+  sender         User      @relation("TapSender", fields: [senderId], references: [id])
+  receiverId     String
+  receiver       User      @relation("TapReceiver", fields: [receiverId], references: [id])
+  type           TapType
+  status         TapStatus @default(PENDING)
+  coinAmount     Int?
+  fiatAmount     Int? // stored in minor units (cents)
+  currency       String    @default("USD")
+  message        String?
+  contextType    String? // 'event' | 'arena' | 'profile'
+  contextId      String?
+  idempotencyKey String    @unique
+  createdAt      DateTime  @default(now())
+  settledAt      DateTime?
 
   walletEntries WalletEntry[]
 
@@ -266,8 +373,6 @@ model Event {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  watchSessions     WatchSession[]
-  contentIndex      ContentIndex?
   ticketPurchases   TicketPurchase[]
   posterGenerations PosterGeneration[]
 
@@ -281,20 +386,21 @@ model Event {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Arena {
-  id            String      @id @default(uuid())
-  starProfileId String
-  starProfile   StarProfile @relation(fields: [starProfileId], references: [id])
-  name          String
-  description   String?
-  status        ArenaStatus @default(ACTIVE)
-  livekitRoom   String?     @unique
-  maxParticipants Int       @default(500)
-  isPrivate     Boolean     @default(false)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id              String      @id @default(uuid())
+  starProfileId   String
+  starProfile     StarProfile @relation(fields: [starProfileId], references: [id])
+  name            String
+  description     String?
+  status          ArenaStatus @default(ACTIVE)
+  livekitRoom     String?     @unique
+  maxParticipants Int         @default(500)
+  isPrivate       Boolean     @default(false)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   events     Event[]
   arenaVotes ArenaVote[]
+  battles    Battle[]
 
   @@index([starProfileId])
   @@index([status])
@@ -305,34 +411,251 @@ model Arena {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Wallet {
-  id        String   @id @default(uuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  coinBalance Int    @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coinBalance Int      @default(0)
+  // Coins locked against in-flight payouts. Reserving moves coins from
+  // coinBalance → reservedCoins so they cannot be double-spent or double-paid
+  // while a withdrawal is processing. Finalize debits reserved; failure releases
+  // reserved back to coinBalance.
+  reservedCoins Int    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  entries WalletEntry[]
+  entries        WalletEntry[]
+  payoutRequests PayoutRequest[]
 }
 
 model WalletEntry {
-  id           String          @id @default(uuid())
-  walletId     String
-  wallet       Wallet          @relation(fields: [walletId], references: [id])
-  type         WalletEntryType
-  coinAmount   Int?
-  fiatAmount   Int?
-  currency     String          @default("USD")
-  description  String?
-  tapId        String?
-  tap          Tap?            @relation(fields: [tapId], references: [id])
-  previousHash String?
-  hash         String
-  idempotencyKey String        @unique
-  createdAt    DateTime        @default(now())
+  id             String          @id @default(uuid())
+  walletId       String
+  wallet         Wallet          @relation(fields: [walletId], references: [id])
+  type           WalletEntryType
+  coinAmount     Int?
+  fiatAmount     Int?
+  currency       String          @default("USD")
+  description    String?
+  tapId          String?
+  tap            Tap?            @relation(fields: [tapId], references: [id])
+  // Per-wallet monotonic position in the hash chain. Makes ordering
+  // deterministic (createdAt can tie) so chain verification is stable.
+  sequence       Int             @default(0)
+  previousHash   String?
+  hash           String
+  idempotencyKey String          @unique
+  createdAt      DateTime        @default(now())
 
   @@index([walletId])
+  @@index([walletId, sequence])
   @@index([tapId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYOUTS / WITHDRAWALS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PayoutStatus {
+  REQUESTED // created; funds reserved (coinBalance → reservedCoins)
+  PROCESSING // provider transfer initiated, awaiting webhook
+  PAID // provider confirmed success; reserved funds finalized (debited)
+  FAILED // provider failed; reserved funds released back to coinBalance
+}
+
+model PayoutRequest {
+  id             String        @id @default(uuid())
+  userId         String
+  wallet         Wallet        @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  amountCoins    Int
+  // Payout (destination) currency the coins were converted into.
+  currency       String        @default("NGN")
+  // Conversion snapshot (CoinConversionService): gross = coin value in `currency`;
+  // fee = FX spread + transfer fee (creator absorbs); net = gross − fee = what the
+  // rail is instructed to send. fxRate = USD→currency rate used, as a string.
+  grossMinorUnits Int?
+  feeMinorUnits   Int?
+  netMinorUnits   Int?
+  fxRate          String?
+  destination    String
+  // Which payout rail handles this withdrawal (paystack | flutterwave | korapay | …).
+  provider       String        @default("paystack")
+  status         PayoutStatus  @default(REQUESTED)
+  // Caller-supplied (or derived) key that makes withdrawal requests idempotent.
+  idempotencyKey String        @unique
+  // Provider transfer reference, set once the provider accepts the transfer.
+  providerRef    String?
+  failureReason  String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  attempts PayoutAttempt[]
+  webhooks PayoutWebhook[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([providerRef])
+}
+
+model PayoutAttempt {
+  id          String        @id @default(uuid())
+  payoutId    String
+  payout      PayoutRequest @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  attemptNo   Int
+  status      String // 'initiated' | 'accepted' | 'error'
+  providerRef String?
+  error       String?
+  createdAt   DateTime      @default(now())
+
+  @@index([payoutId])
+}
+
+model PayoutWebhook {
+  id          String         @id @default(uuid())
+  payoutId    String?
+  payout      PayoutRequest? @relation(fields: [payoutId], references: [id])
+  event       String
+  providerRef String?
+  // Unique per provider event — the replay-protection key. A duplicate webhook
+  // delivery collides on this and is rejected before any balance mutation.
+  dedupeKey   String         @unique
+  rawPayload  Json
+  processedAt DateTime       @default(now())
+
+  @@index([payoutId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYMENT PROVIDER REGISTRY (multi-provider on/off control)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Runtime on/off override for a (provider, capability) pair. This is the DB
+// layer of the toggle: when `enabled` is non-null it wins over the env default
+// (PAYMENTS_<PROVIDER>_<CAPABILITY>_ENABLED). When no row exists, or `enabled`
+// is null, resolution falls back to the env flag, then to "configured?" (i.e.
+// whether the provider's credentials are present). Admin-only to mutate.
+model ProviderSetting {
+  id         String   @id @default(uuid())
+  // Lowercase provider key, e.g. "paystack", "stripe", "wise".
+  provider   String
+  // One of: "checkout" | "subscription" | "payout".
+  capability String
+  // null = no override (defer to env default); true/false = forced state.
+  enabled    Boolean?
+  // Audit: which admin last changed this and why.
+  updatedBy  String?
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([provider, capability])
+  @@index([capability])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BILLING SUBSCRIPTIONS (multi-provider recurring: Stripe / Lemon Squeezy /
+// Paddle). Distinct from the supporter→star `Subscription` model above: these
+// are platform membership plans billed through an external MoR/PSP.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A purchasable recurring plan, mapped to a provider-side price/variant id.
+model SubscriptionPlan {
+  id             String   @id @default(uuid())
+  // Stable internal key referenced by the API (e.g. "premium_monthly").
+  key            String   @unique
+  name           String
+  // Which billing rail sells this plan (stripe | lemonsqueezy | paddle | …).
+  provider       String
+  // Provider-side identifier: Stripe price id, LS variant id, Paddle price id.
+  providerPlanId String
+  priceMinorUnits Int
+  currency       String   @default("USD")
+  interval       String   @default("month") // month | year
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subscriptions  PaymentSubscription[]
+
+  @@index([provider])
+  @@index([active])
+}
+
+model PaymentSubscription {
+  id                     String           @id @default(uuid())
+  userId                 String
+  planId                 String
+  plan                   SubscriptionPlan @relation(fields: [planId], references: [id])
+  provider               String
+  // Provider-side subscription id, populated once the provider confirms it
+  // (may be null between checkout creation and the first webhook).
+  providerSubscriptionId String?
+  // pending | active | past_due | cancelled | expired
+  status                 String           @default("pending")
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean          @default(false)
+  // Our reference, echoed back by the provider for linking the webhook.
+  idempotencyKey         String           @unique
+  cancelledAt            DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  @@unique([provider, providerSubscriptionId])
+  @@index([userId, status])
+  @@index([providerSubscriptionId])
+}
+
+// Replay protection + audit for subscription webhook deliveries.
+model SubscriptionWebhook {
+  id                     String   @id @default(uuid())
+  provider               String
+  event                  String
+  // Provider event identity; a duplicate delivery collides here and is ignored.
+  dedupeKey              String   @unique
+  providerSubscriptionId String?
+  rawPayload             Json
+  processedAt            DateTime @default(now())
+
+  @@index([providerSubscriptionId])
+}
+
+// Per-user, per-provider payee for onboarding-heavy payout rails (Stripe
+// Connect, Wise, Trolley, Tipalti). Money is reserved only against a recipient
+// that has reached `active`/`payable` via the provider's hosted onboarding.
+model PayoutRecipient {
+  id          String   @id @default(uuid())
+  userId      String
+  // stripe_connect | wise | trolley | tipalti
+  provider    String
+  // Provider-side handle: acct_… | wise recipientId | R-… | payeeId.
+  providerRef String?
+  // pending | onboarding | active | restricted | rejected | disabled
+  status      String   @default("pending")
+  // Only a payable recipient can receive a transfer (hard invariant).
+  payable     Boolean  @default(false)
+  // Provider snapshot (requirements due, disabled_reason, country, …).
+  details     Json?
+  // Destination currency fixed by onboarding, when known.
+  currency    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, provider])
+  @@unique([provider, providerRef])
+  @@index([userId, status])
+}
+
+// Replay protection + audit for recipient-onboarding webhook deliveries
+// (e.g. Stripe account.updated). Settlement webhooks use PayoutWebhook.
+model RecipientOnboardingWebhook {
+  id          String   @id @default(uuid())
+  provider    String
+  event       String
+  dedupeKey   String   @unique
+  providerRef String?
+  rawPayload  Json
+  processedAt DateTime @default(now())
+
+  @@index([providerRef])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -361,20 +684,82 @@ model Notification {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model ModerationReport {
-  id           String               @id @default(uuid())
-  reporterId   String
-  reporter     User                 @relation("Reporter", fields: [reporterId], references: [id])
-  targetType   String               // 'user' | 'event' | 'arena' | 'tap'
-  targetId     String
-  caseType     String
-  reason       String?
-  status       ModerationCaseStatus @default(OPEN)
-  resolvedAt   DateTime?
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  id         String               @id @default(uuid())
+  reporterId String
+  reporter   User                 @relation("Reporter", fields: [reporterId], references: [id])
+  targetType String // 'user' | 'event' | 'arena' | 'tap'
+  targetId   String
+  caseType   String
+  reason     String?
+  status     ModerationCaseStatus @default(OPEN)
+  severity   String?              // 'low' | 'medium' | 'high' | 'critical'
+  assignedTo String?              // moderator/admin userId handling the case
+  resolvedBy String?              // userId that resolved/dismissed the case
+  resolvedAt DateTime?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
 
   @@index([targetType, targetId])
   @@index([status])
+}
+
+// A directed block from one user to another. Unique per (blocker, blocked).
+model UserBlock {
+  id        String   @id @default(uuid())
+  blockerId String
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+}
+
+// Immutable audit trail of every privileged moderation/admin action.
+model ModerationAuditLog {
+  id         String   @id @default(uuid())
+  actorId    String   // userId of the moderator/admin who performed the action
+  action     String   // 'report' | 'block' | 'unblock' | 'takedown' | 'resolve' | 'escalate' | 'suspend' | 'unsuspend'
+  targetType String
+  targetId   String
+  reason     String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+// Automated content-safety scan record. One row per scanned payload; persists
+// the provider verdict + findings so moderators have an audit trail and the
+// queue worker can pick up PENDING/ERROR rows for (re)processing.
+model ContentScan {
+  id          String            @id @default(uuid())
+  targetType  String // 'post' | 'message' | 'profile' | 'replay' | ...
+  targetId    String
+  kind        ContentScanKind
+  provider    String // provider name that produced the verdict ('manual' | 'cloud' | ...)
+  status      ContentScanStatus @default(PENDING)
+  // The payload to scan: { text } for TEXT, { imageUrl } for IMAGE. Persisted so
+  // the queue worker can (re)process PENDING/ERROR rows.
+  payload     Json?
+  // Highest severity finding: 'low' | 'medium' | 'high' | 'critical'
+  severity    String?
+  findings    Json? // SafetyFinding[] — categories, scores, matched terms
+  // Reference to the moderation report opened when status = FLAGGED.
+  reportId    String?
+  submittedBy String? // userId that submitted the content, if known
+  scannedAt   DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([status])
+  @@index([targetType, targetId])
+  @@index([createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -386,8 +771,10 @@ model WatchSession {
   userId                 String
   user                   User      @relation(fields: [userId], references: [id])
   contentId              String
-  contentType            String    // 'event' | 'replay'
-  event                  Event?    @relation(fields: [contentId], references: [id])
+  // Polymorphic: identifies an event, replay, or live room depending on
+  // contentType. Intentionally NOT a foreign key — a live_room contentId is a
+  // LiveRoom id, not an Event id, so an FK to Event would reject those rows.
+  contentType            String // 'event' | 'replay' | 'live_room'
   joinedAt               DateTime  @default(now())
   leftAt                 DateTime?
   lastPositionSeconds    Int?
@@ -403,7 +790,7 @@ model FeedEngagement {
   user        User     @relation(fields: [userId], references: [id])
   contentId   String
   contentType String
-  action      String   // 'view' | 'like' | 'share' | 'skip'
+  action      String // 'view' | 'like' | 'share' | 'skip'
   category    String?
   createdAt   DateTime @default(now())
 
@@ -422,6 +809,7 @@ model MediaUpload {
   purpose     String
   fileName    String
   contentType String
+  size        Int?
   storageKey  String
   fileUrl     String?
   status      MediaScanStatus @default(PENDING)
@@ -441,7 +829,9 @@ model ContentIndex {
   id           String   @id @default(uuid())
   contentType  String
   contentId    String   @unique
-  event        Event?   @relation(fields: [contentId], references: [id])
+  // Polymorphic: contentId identifies an event, replay, or live room depending
+  // on contentType. Intentionally NOT a foreign key — a replay/live_room
+  // contentId is not an Event id, so an FK to Event would reject those rows.
   title        String
   body         String?
   tags         String[]
@@ -457,13 +847,13 @@ model ContentIndex {
 }
 
 model RecommendationFeedback {
-  id               String   @id @default(uuid())
-  userId           String
-  contentIndexId   String
-  action           String   // 'seen' | 'clicked' | 'dismissed' | 'reported'
-  reason           String?
-  context          Json?
-  createdAt        DateTime @default(now())
+  id             String   @id @default(uuid())
+  userId         String
+  contentIndexId String
+  action         String // 'seen' | 'clicked' | 'dismissed' | 'reported'
+  reason         String?
+  context        Json?
+  createdAt      DateTime @default(now())
 
   @@index([userId])
   @@index([contentIndexId])
@@ -485,15 +875,15 @@ model AiCreatorProfile {
 }
 
 model AiGeneration {
-  id               String           @id @default(uuid())
+  id                 String           @id @default(uuid())
   aiCreatorProfileId String
-  aiCreatorProfile AiCreatorProfile @relation(fields: [aiCreatorProfileId], references: [id])
-  type             String           // 'caption' | 'thumbnail' | 'title' | 'script' | 'hashtags'
-  prompt           String
-  result           String?
-  model            String?
-  tokensUsed       Int?
-  createdAt        DateTime         @default(now())
+  aiCreatorProfile   AiCreatorProfile @relation(fields: [aiCreatorProfileId], references: [id])
+  type               String // 'caption' | 'thumbnail' | 'title' | 'script' | 'hashtags'
+  prompt             String
+  result             String?
+  model              String?
+  tokensUsed         Int?
+  createdAt          DateTime         @default(now())
 
   @@index([aiCreatorProfileId])
 }
@@ -590,19 +980,19 @@ enum RegionalEntityType {
 // Richer relationship between a supporter and a star — tracks lifetime spend,
 // milestone level, and status independently of individual Subscriptions.
 model SupportRelationship {
-  id                  String                   @id @default(uuid())
-  supporterProfileId  String
-  supporterProfile    SupporterProfile         @relation("SupportRelationshipSupporter", fields: [supporterProfileId], references: [id])
-  starProfileId       String
-  starProfile         StarProfile              @relation("SupportRelationshipStar", fields: [starProfileId], references: [id])
-  status              SupportRelationshipStatus @default(ACTIVE)
-  startedAt           DateTime                 @default(now())
-  totalCoinsGifted    Int                      @default(0)
-  totalFiatGifted     Int                      @default(0) // minor units
-  tapCount            Int                      @default(0)
-  milestoneLevel      Int                      @default(0)
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
+  id                 String                    @id @default(uuid())
+  supporterProfileId String
+  supporterProfile   SupporterProfile          @relation("SupportRelationshipSupporter", fields: [supporterProfileId], references: [id])
+  starProfileId      String
+  starProfile        StarProfile               @relation("SupportRelationshipStar", fields: [starProfileId], references: [id])
+  status             SupportRelationshipStatus @default(ACTIVE)
+  startedAt          DateTime                  @default(now())
+  totalCoinsGifted   Int                       @default(0)
+  totalFiatGifted    Int                       @default(0) // minor units
+  tapCount           Int                       @default(0)
+  milestoneLevel     Int                       @default(0)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
 
   milestones SupportMilestone[]
   streak     SupportStreak?
@@ -629,14 +1019,14 @@ model SupportStreak {
 
 // Individual milestone events within a SupportRelationship.
 model SupportMilestone {
-  id                   String               @id @default(uuid())
+  id                    String               @id @default(uuid())
   supportRelationshipId String
-  supportRelationship  SupportRelationship  @relation(fields: [supportRelationshipId], references: [id], onDelete: Cascade)
-  type                 SupportMilestoneType
-  thresholdValue       Int                  // the coins / tap count that was hit
-  achievedAt           DateTime             @default(now())
-  notifiedAt           DateTime?
-  metadata             Json?
+  supportRelationship   SupportRelationship  @relation(fields: [supportRelationshipId], references: [id], onDelete: Cascade)
+  type                  SupportMilestoneType
+  thresholdValue        Int // the coins / tap count that was hit
+  achievedAt            DateTime             @default(now())
+  notifiedAt            DateTime?
+  metadata              Json?
 
   @@index([supportRelationshipId])
   @@index([type])
@@ -660,7 +1050,7 @@ model GoldStarProfile {
   revokedByUserId String?
   revokedBy       User?          @relation("GoldStarRevokedBy", fields: [revokedByUserId], references: [id])
   reason          String?
-  benefits        Json?          // { prioritySupport, exclusiveBadge, boostMultiplier, … }
+  benefits        Json? // { prioritySupport, exclusiveBadge, boostMultiplier, … }
 
   @@index([status])
   @@index([grantedByUserId])
@@ -690,19 +1080,19 @@ model StarHistory {
 
 // Temporary visibility boost for a star, event, or arena in a specific region.
 model RegionalBoost {
-  id                String             @id @default(uuid())
-  entityType        RegionalEntityType
-  entityId          String             // polymorphic — no FK constraint
-  region            String             // ISO 3166-1 alpha-2 or custom region slug
-  boostScore        Float              @default(1.0)
-  isActive          Boolean            @default(true)
-  startedAt         DateTime           @default(now())
-  expiresAt         DateTime?
+  id                 String             @id @default(uuid())
+  entityType         RegionalEntityType
+  entityId           String // polymorphic — no FK constraint
+  region             String // ISO 3166-1 alpha-2 or custom region slug
+  boostScore         Float              @default(1.0)
+  isActive           Boolean            @default(true)
+  startedAt          DateTime           @default(now())
+  expiresAt          DateTime?
   authorizedByUserId String
-  authorizedBy      User               @relation("BoostAuthorizer", fields: [authorizedByUserId], references: [id])
-  reason            String?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  authorizedBy       User               @relation("BoostAuthorizer", fields: [authorizedByUserId], references: [id])
+  reason             String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
 
   @@index([entityType, entityId])
   @@index([region, isActive])
@@ -721,7 +1111,7 @@ model TapStorm {
   starProfile         StarProfile    @relation(fields: [starProfileId], references: [id])
   title               String
   description         String?
-  contextType         String?        // 'event' | 'arena'
+  contextType         String? // 'event' | 'arena'
   contextId           String?
   startsAt            DateTime
   endsAt              DateTime
@@ -745,21 +1135,21 @@ model TapStorm {
 
 // Fiat purchase record for a ticketed event.
 model TicketPurchase {
-  id                    String               @id @default(uuid())
-  userId                String
-  user                  User                 @relation(fields: [userId], references: [id])
-  eventId               String
-  event                 Event                @relation(fields: [eventId], references: [id])
-  quantity              Int                  @default(1)
+  id                      String               @id @default(uuid())
+  userId                  String
+  user                    User                 @relation(fields: [userId], references: [id])
+  eventId                 String
+  event                   Event                @relation(fields: [eventId], references: [id])
+  quantity                Int                  @default(1)
   unitPriceFiatMinorUnits Int
-  currency              String               @default("NGN")
-  totalFiatMinorUnits   Int
-  status                TicketPurchaseStatus @default(PENDING)
-  reference             String
-  idempotencyKey        String               @unique
-  purchasedAt           DateTime             @default(now())
-  refundedAt            DateTime?
-  metadata              Json?
+  currency                String               @default("NGN")
+  totalFiatMinorUnits     Int
+  status                  TicketPurchaseStatus @default(PENDING)
+  reference               String
+  idempotencyKey          String               @unique
+  purchasedAt             DateTime             @default(now())
+  refundedAt              DateTime?
+  metadata                Json?
 
   attribution TicketAttribution?
 
@@ -771,16 +1161,16 @@ model TicketPurchase {
 
 // Attribution chain for a ticket purchase (referrals, promo codes, campaigns).
 model TicketAttribution {
-  id                String                @id @default(uuid())
-  ticketPurchaseId  String                @unique
-  ticketPurchase    TicketPurchase        @relation(fields: [ticketPurchaseId], references: [id], onDelete: Cascade)
+  id                 String                @id @default(uuid())
+  ticketPurchaseId   String                @unique
+  ticketPurchase     TicketPurchase        @relation(fields: [ticketPurchaseId], references: [id], onDelete: Cascade)
   attributedToUserId String?
-  attributedTo      User?                 @relation("TicketAttributedTo", fields: [attributedToUserId], references: [id])
-  attributionType   TicketAttributionType @default(DIRECT)
-  promoCode         String?
-  campaignId        String?
-  metadata          Json?
-  createdAt         DateTime              @default(now())
+  attributedTo       User?                 @relation("TicketAttributedTo", fields: [attributedToUserId], references: [id])
+  attributionType    TicketAttributionType @default(DIRECT)
+  promoCode          String?
+  campaignId         String?
+  metadata           Json?
+  createdAt          DateTime              @default(now())
 
   @@index([attributedToUserId])
   @@index([campaignId])
@@ -792,19 +1182,19 @@ model TicketAttribution {
 
 // AI-generated promotional poster for a star or a specific event.
 model PosterGeneration {
-  id              String                 @id @default(uuid())
-  starProfileId   String
-  starProfile     StarProfile            @relation(fields: [starProfileId], references: [id])
-  eventId         String?
-  event           Event?                 @relation(fields: [eventId], references: [id])
-  prompt          String
-  style           String?                // 'bold' | 'minimal' | 'cinematic' | custom
-  resultImageUrl  String?
-  storageKey      String?
-  status          PosterGenerationStatus @default(PENDING)
-  model           String?
-  generationMs    Int?
-  createdAt       DateTime               @default(now())
+  id             String                 @id @default(uuid())
+  starProfileId  String
+  starProfile    StarProfile            @relation(fields: [starProfileId], references: [id])
+  eventId        String?
+  event          Event?                 @relation(fields: [eventId], references: [id])
+  prompt         String
+  style          String? // 'bold' | 'minimal' | 'cinematic' | custom
+  resultImageUrl String?
+  storageKey     String?
+  status         PosterGenerationStatus @default(PENDING)
+  model          String?
+  generationMs   Int?
+  createdAt      DateTime               @default(now())
 
   @@index([starProfileId])
   @@index([eventId])
@@ -830,7 +1220,9 @@ model CreatorHouse {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  members CreatorHouseMember[]
+  members           CreatorHouseMember[]
+  challengerBattles HouseBattle[]        @relation("ChallengerHouse")
+  defenderBattles   HouseBattle[]        @relation("DefenderHouse")
 
   @@index([ownerStarProfileId])
   @@index([status])
@@ -888,18 +1280,18 @@ model CreatorSeason {
 
 // Audience poll created inside an Arena (e.g., "What should we do next?").
 model ArenaVote {
-  id             String          @id @default(uuid())
-  arenaId        String
-  arena          Arena           @relation(fields: [arenaId], references: [id])
+  id              String          @id @default(uuid())
+  arenaId         String
+  arena           Arena           @relation(fields: [arenaId], references: [id])
   createdByUserId String
-  createdBy      User            @relation(fields: [createdByUserId], references: [id])
-  question       String
-  options        Json            // [{ id: string, text: string }]
-  status         ArenaVoteStatus @default(OPEN)
-  endsAt         DateTime?
-  totalVotes     Int             @default(0)
-  createdAt      DateTime        @default(now())
-  closedAt       DateTime?
+  createdBy       User            @relation(fields: [createdByUserId], references: [id])
+  question        String
+  options         Json // [{ id: string, text: string }]
+  status          ArenaVoteStatus @default(OPEN)
+  endsAt          DateTime?
+  totalVotes      Int             @default(0)
+  createdAt       DateTime        @default(now())
+  closedAt        DateTime?
 
   responses ArenaVoteResponse[]
 
@@ -915,7 +1307,7 @@ model ArenaVoteResponse {
   arenaVote   ArenaVote @relation(fields: [arenaVoteId], references: [id], onDelete: Cascade)
   userId      String
   user        User      @relation(fields: [userId], references: [id])
-  optionId    String    // references one of ArenaVote.options[].id
+  optionId    String // references one of ArenaVote.options[].id
   createdAt   DateTime  @default(now())
 
   @@unique([arenaVoteId, userId])
@@ -955,8 +1347,8 @@ model Video {
   title           String
   description     String?
   genre           Genre
-  country         String?     // ISO 3166-1 alpha-2
-  language        String?     // ISO 639-1
+  country         String? // ISO 3166-1 alpha-2
+  language        String? // ISO 639-1
   tags            String[]
   status          VideoStatus @default(UPLOADING)
   storageKey      String
@@ -1067,4 +1459,1016 @@ model TrendingScore {
   @@unique([videoId, scope])
   @@index([scope, rank])
   @@index([scope, score])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SPRINT 8 — ARENAS, BATTLES & CREATOR LEAGUES
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ArenaSeason {
+  id        String            @id @default(uuid())
+  name      String
+  number    Int               @unique
+  status    ArenaSeasonStatus @default(UPCOMING)
+  startsAt  DateTime
+  endsAt    DateTime
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  battles    Battle[]
+  creatorElo CreatorElo[]
+
+  @@index([status])
+}
+
+model CreatorElo {
+  id             String        @id @default(uuid())
+  starProfileId  String
+  starProfile    StarProfile   @relation(fields: [starProfileId], references: [id])
+  arenaSeasonId  String?
+  arenaSeason    ArenaSeason?  @relation(fields: [arenaSeasonId], references: [id])
+  elo            Int           @default(1200)
+  division       ArenaDivision @default(BRONZE)
+  wins           Int           @default(0)
+  losses         Int           @default(0)
+  draws          Int           @default(0)
+  peakElo        Int           @default(1200)
+  decayAppliedAt DateTime?
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([starProfileId, arenaSeasonId])
+  @@index([division, elo(sort: Desc)])
+  @@index([arenaSeasonId])
+}
+
+model Battle {
+  id                 String       @id @default(uuid())
+  arenaId            String?
+  arena              Arena?       @relation(fields: [arenaId], references: [id])
+  arenaSeasonId      String?
+  arenaSeason        ArenaSeason? @relation(fields: [arenaSeasonId], references: [id])
+  type               BattleType
+  status             BattleStatus @default(DRAFT)
+  votingMethod       VotingMethod @default(HYBRID)
+  title              String
+  description        String?
+  isTeamBattle       Boolean      @default(false)
+  maxParticipants    Int          @default(2)
+  registrationEndsAt DateTime?
+  votingEndsAt       DateTime?
+  scheduledAt        DateTime?
+  startedAt          DateTime?
+  endedAt            DateTime?
+  winnerStarId       String?
+  winnerTeamId       String?
+  eloAwarded         Boolean      @default(false)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  participants BattleParticipant[]
+  teams        BattleTeam[]
+  votes        BattleVote[]
+  prizePool    ArenaPrizePool?
+  highlights   BattleHighlight[]
+  houseBattles HouseBattle[]
+
+  @@index([arenaId])
+  @@index([status])
+  @@index([type, status])
+  @@index([arenaSeasonId])
+}
+
+model BattleParticipant {
+  id            String                @id @default(uuid())
+  battleId      String
+  battle        Battle                @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  starProfileId String
+  starProfile   StarProfile           @relation(fields: [starProfileId], references: [id])
+  role          BattleParticipantRole @default(CHALLENGER)
+  teamId        String?
+  team          BattleTeam?           @relation(fields: [teamId], references: [id])
+  score         Int                   @default(0)
+  voteCount     Int                   @default(0)
+  joinedAt      DateTime              @default(now())
+
+  receivedVotes BattleVote[]
+
+  @@unique([battleId, starProfileId])
+  @@index([battleId])
+}
+
+model BattleTeam {
+  id        String   @id @default(uuid())
+  battleId  String
+  battle    Battle   @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  name      String
+  side      String   @default("A")
+  score     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  members BattleParticipant[]
+
+  @@index([battleId])
+}
+
+model BattleVote {
+  id                  String            @id @default(uuid())
+  battleId            String
+  battle              Battle            @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  voterId             String
+  voter               User              @relation("BattleVoteVoter", fields: [voterId], references: [id])
+  targetParticipantId String
+  targetParticipant   BattleParticipant @relation(fields: [targetParticipantId], references: [id])
+  baseWeight          Float             @default(1.0)
+  trustScore          Float             @default(1.0)
+  patronMultiplier    Float             @default(1.0)
+  finalWeight         Float             @default(1.0)
+  isJudgeVote         Boolean           @default(false)
+  fraudFlag           Boolean           @default(false)
+  createdAt           DateTime          @default(now())
+
+  @@unique([battleId, voterId])
+  @@index([battleId])
+  @@index([targetParticipantId])
+  @@index([fraudFlag])
+}
+
+model ArenaPrizePool {
+  id           String            @id @default(uuid())
+  battleId     String?           @unique
+  battle       Battle?           @relation(fields: [battleId], references: [id])
+  totalCoins   Int               @default(0)
+  distribution PrizeDistribution @default(WINNER_TAKES_ALL)
+  escrowed     Boolean           @default(true)
+  settled      Boolean           @default(false)
+  settledAt    DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  contributions PrizePoolContribution[]
+
+  @@index([settled])
+}
+
+model PrizePoolContribution {
+  id            String          @id @default(uuid())
+  prizePoolId   String
+  prizePool     ArenaPrizePool  @relation(fields: [prizePoolId], references: [id], onDelete: Cascade)
+  contributorId String
+  contributor   User            @relation("PrizeContributor", fields: [contributorId], references: [id])
+  source        PrizePoolSource
+  coins         Int             @default(0)
+  createdAt     DateTime        @default(now())
+
+  @@index([prizePoolId])
+}
+
+model HouseBattle {
+  id                String            @id @default(uuid())
+  challengerHouseId String
+  challengerHouse   CreatorHouse      @relation("ChallengerHouse", fields: [challengerHouseId], references: [id])
+  defenderHouseId   String
+  defenderHouse     CreatorHouse      @relation("DefenderHouse", fields: [defenderHouseId], references: [id])
+  battleId          String
+  battle            Battle            @relation(fields: [battleId], references: [id])
+  status            HouseBattleStatus @default(PENDING)
+  winnerHouseId     String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([challengerHouseId])
+  @@index([defenderHouseId])
+  @@index([status])
+}
+
+model BattleHighlight {
+  id                String   @id @default(uuid())
+  battleId          String
+  battle            Battle   @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  title             String
+  clipUrl           String?
+  isWinnerClip      Boolean  @default(false)
+  isViralMoment     Boolean  @default(false)
+  pushedToDiscovery Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  @@index([battleId])
+  @@index([pushedToDiscovery])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MESSAGING (Sprint 5 — Prisma-backed; replaces in-memory MessageStorePort)
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum MessageRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum ConversationStatus {
+  ACTIVE
+  ARCHIVED
+  BLOCKED
+}
+
+enum DMAccessLevel {
+  NOBODY
+  SUPPORTERS
+  PATRONS
+  LEGENDS
+  EVERYONE
+  CUSTOM
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  GIFT_NOTIFICATION
+  SYSTEM
+}
+
+model DmPermission {
+  userId                  String        @id
+  accessLevel             DMAccessLevel @default(NOBODY)
+  customThresholdUsdCents Int?
+  allowedUserIds          String[]
+  updatedAt               DateTime      @updatedAt
+}
+
+model MessageRequest {
+  id               String               @id @default(uuid())
+  senderId         String
+  recipientId      String
+  senderPatronTier String
+  openingMessage   String
+  status           MessageRequestStatus @default(PENDING)
+  sentAt           DateTime             @default(now())
+  resolvedAt       DateTime?
+  conversationId   String?
+
+  @@index([recipientId, status])
+  @@index([senderId])
+}
+
+model Conversation {
+  id             String             @id @default(uuid())
+  participantIds String[]
+  status         ConversationStatus @default(ACTIVE)
+  lastMessageAt  DateTime?
+  openedAt       DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  messages       DirectMessage[]
+  unreadCounters ConversationUnread[]
+
+  @@index([participantIds])
+}
+
+model DirectMessage {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  recipientId    String
+  type           MessageType  @default(TEXT)
+  body           String
+  sentAt         DateTime     @default(now())
+
+  @@index([conversationId, sentAt])
+}
+
+model ConversationUnread {
+  conversationId String
+  userId         String
+  count          Int          @default(0)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SPRINT 10 — DOMAIN PERSISTENCE (replaces in-memory repositories)
+// Standalone models (no FK to existing tables) mirroring the messaging pattern.
+// Status/type union fields are stored as String; nested objects as Json.
+// Migration: 20260619000000_domain_persistence
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Campaign (campaign-core) ────────────────────────────────────────────────
+
+model VisibilityCampaign {
+  id             String   @id @default(uuid())
+  starId         String
+  promotableType String
+  promotableId   String
+  scope          String
+  status         String   @default("PENDING")
+  coinsSpent     Int      @default(0)
+  idempotencyKey String   @unique
+  startsAt       DateTime
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([starId])
+  @@index([status])
+  @@index([scope, status])
+}
+
+model CampaignLedgerEntry {
+  id          String   @id @default(uuid())
+  campaignId  String
+  starId      String
+  action      String
+  coinsAmount Int
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([campaignId])
+}
+
+model CampaignAnalytics {
+  id          String   @id @default(uuid())
+  campaignId  String   @unique
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  conversions Int      @default(0)
+  ctr         Float    @default(0)
+  updatedAt   DateTime @updatedAt
+}
+
+// ── Companion (companion-core) ──────────────────────────────────────────────
+
+model CompanionProfile {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  displayName         String
+  bio                 String?
+  nationality         String
+  languages           String[]
+  timezone            String
+  heightCm            Int?
+  hobbies             String[]
+  interests           String[]
+  sessionTypes        String[]
+  activities          String[]
+  verificationStatus  String   @default("UNVERIFIED")
+  verificationBadge   Boolean  @default(false)
+  ageVerified         Boolean  @default(false)
+  introVideoUrl       String?
+  introImageUrls      String[]
+  status              String   @default("ACTIVE")
+  isAvailableNow      Boolean  @default(false)
+  averageRating       Float    @default(0)
+  reviewCount         Int      @default(0)
+  totalSessionMinutes Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([status])
+  @@index([isAvailableNow])
+}
+
+model CompanionRate {
+  companionId     String
+  sessionType     String
+  durationMinutes Int
+  coinCost        Int
+  maxParticipants Int
+  isEnabled       Boolean @default(true)
+
+  @@id([companionId, sessionType, durationMinutes])
+  @@index([companionId])
+}
+
+model CompanionAvailabilitySlot {
+  id          String @id @default(uuid())
+  companionId String
+  day         String
+  startHour   Int
+  endHour     Int
+
+  @@unique([companionId, day, startHour])
+  @@index([companionId])
+}
+
+model CompanionReview {
+  id          String   @id @default(uuid())
+  companionId String
+  reviewerId  String
+  sessionId   String
+  rating      Int
+  comment     String?
+  isHidden    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([companionId])
+}
+
+model CompanionMedia {
+  id           String   @id @default(uuid())
+  companionId  String
+  type         String
+  url          String
+  thumbnailUrl String?
+  isApproved   Boolean  @default(false)
+  sortOrder    Int      @default(0)
+  uploadedAt   DateTime @default(now())
+
+  @@index([companionId])
+}
+
+model CompanionBlock {
+  id        String   @id @default(uuid())
+  blockerId String
+  blockedId String
+  blockedAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
+
+model CompanionReport {
+  id         String    @id @default(uuid())
+  reporterId String
+  reportedId String
+  sessionId  String?
+  reason     String
+  status     String    @default("PENDING")
+  reportedAt DateTime  @default(now())
+  reviewedAt DateTime?
+
+  @@index([status])
+}
+
+model LonelinessProfile {
+  userId    String   @id
+  score     Int      @default(0)
+  signals   Json
+  updatedAt DateTime
+}
+
+// ── Age gate (age-gate-core) ────────────────────────────────────────────────
+
+model AgeGateProfile {
+  userId             String    @id
+  level              String
+  status             String    @default("NOT_VERIFIED")
+  verificationMethod String?
+  verifiedAt         DateTime?
+  expiresAt          DateTime?
+  safeModeEnabled    Boolean   @default(false)
+  updatedAt          DateTime
+}
+
+model ConsentRecord {
+  id          String   @id @default(uuid())
+  userId      String
+  consentType String
+  granted     Boolean
+  recordedAt  DateTime @default(now())
+  ipAddress   String?
+  userAgent   String?
+
+  @@index([userId])
+}
+
+// ── Companion sessions (session-core) ───────────────────────────────────────
+
+model SessionBooking {
+  id              String    @id @default(uuid())
+  companionId     String
+  patronId        String
+  sessionType     String
+  durationMinutes Int
+  coinCost        Int
+  status          String    @default("PENDING")
+  idempotencyKey  String    @unique
+  scheduledAt     DateTime
+  confirmedAt     DateTime?
+  cancelledAt     DateTime?
+  sessionId       String?
+  createdAt       DateTime  @default(now())
+
+  @@index([companionId])
+  @@index([patronId])
+}
+
+model SessionEscrow {
+  id          String    @id @default(uuid())
+  bookingId   String    @unique
+  patronId    String
+  companionId String
+  heldCoins   Int
+  status      String    @default("HELD")
+  heldAt      DateTime
+  releasedAt  DateTime?
+}
+
+model SessionReservation {
+  id               String    @id @default(uuid())
+  bookingId        String
+  companionId      String
+  sessionType      String
+  status           String    @default("SCHEDULED")
+  livekitRoomName  String
+  durationMinutes  Int
+  scheduledAt      DateTime
+  startedAt        DateTime?
+  endsAt           DateTime?
+  endedAt          DateTime?
+  extensionMinutes Int       @default(0)
+  participantCount Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([bookingId])
+  @@index([companionId])
+}
+
+model SessionExtension {
+  id              String   @id @default(uuid())
+  sessionId       String
+  patronId        String
+  addedMinutes    Int
+  additionalCoins Int
+  escrowId        String
+  extendedAt      DateTime
+
+  @@index([sessionId])
+}
+
+model CompanionSessionParticipant {
+  id              String    @id @default(uuid())
+  sessionId       String
+  userId          String
+  role            String
+  livekitIdentity String
+  joinedAt        DateTime
+  leftAt          DateTime?
+  watchSeconds    Int       @default(0)
+
+  @@index([sessionId])
+}
+
+model SessionPayout {
+  id               String   @id @default(uuid())
+  sessionId        String   @unique
+  companionId      String
+  grossCoins       Int
+  platformFeeCoins Int
+  netCoins         Int
+  splits           Json
+  settledAt        DateTime
+}
+
+// ── Patron (patron-core) ────────────────────────────────────────────────────
+
+model PatronProfile {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  displayName       String
+  avatarUrl         String?
+  tier              String   @default("VISITOR")
+  lifetimeUsdCents  Int      @default(0)
+  lifetimeCoins     Int      @default(0)
+  supportDiversity  Int      @default(0)
+  accountAgeDays    Int      @default(0)
+  moderationStrikes Int      @default(0)
+  isPublic          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model PatronHistory {
+  id          String   @id @default(uuid())
+  patronId    String
+  starId      String
+  action      String
+  coinsAmount Int
+  usdCents    Int
+  recordedAt  DateTime
+
+  @@index([patronId])
+}
+
+model CreatorRelationship {
+  id                      String   @id @default(uuid())
+  patronId                String
+  starId                  String
+  creatorLifetimeUsdCents Int      @default(0)
+  creatorLifetimeCoins    Int      @default(0)
+  creatorTier             String   @default("VISITOR")
+  isMuted                 Boolean  @default(false)
+  rank                    Int?
+  firstSupportedAt        DateTime
+  lastSupportedAt         DateTime
+  updatedAt               DateTime @updatedAt
+
+  @@unique([patronId, starId])
+  @@index([starId])
+}
+
+model PatronAchievement {
+  id              String   @id @default(uuid())
+  patronId        String
+  achievementType String
+  title           String
+  description     String
+  badge           String
+  unlockedAt      DateTime
+
+  @@index([patronId])
+}
+
+model PatronMilestone {
+  id                String   @id @default(uuid())
+  patronId          String
+  starId            String
+  milestoneType     String
+  thresholdUsdCents Int
+  reachedAt         DateTime
+
+  @@index([patronId])
+}
+
+// ── Trust (trust-core) ──────────────────────────────────────────────────────
+
+model TrustProfile {
+  userId       String   @id
+  score        Int      @default(0)
+  signals      Json
+  restrictions String[]
+  flags        Json
+  updatedAt    DateTime
+}
+
+model TrustFlag {
+  id       String   @id @default(uuid())
+  userId   String
+  flagType String
+  raisedBy String
+  raisedAt DateTime
+
+  @@index([userId])
+}
+
+model TrustRestrictionRecord {
+  id          String    @id @default(uuid())
+  userId      String
+  restriction String
+  reason      String
+  expiresAt   DateTime?
+  setAt       DateTime
+
+  @@index([userId])
+}
+
+// ── Session engine (session-engine-core) ────────────────────────────────────
+
+model SessionRoom {
+  id               String    @id @default(uuid())
+  roomType         String
+  title            String
+  hostId           String
+  status           String    @default("CREATED")
+  maxParticipants  Int
+  livekitRoomName  String
+  billing          Json
+  permissions      Json
+  recordingEnabled Boolean   @default(false)
+  replayPublishing Boolean   @default(false)
+  metadata         Json?
+  idempotencyKey   String?   @unique
+  createdAt        DateTime
+  openedAt         DateTime?
+  startedAt        DateTime?
+  endedAt          DateTime?
+
+  @@index([status])
+  @@index([roomType])
+}
+
+model SessionRoomParticipant {
+  id        String    @id @default(uuid())
+  roomId    String
+  userId    String
+  role      String
+  status    String    @default("INVITED")
+  invitedBy String?
+  joinedAt  DateTime?
+  leftAt    DateTime?
+
+  @@index([roomId])
+  @@index([roomId, userId])
+}
+
+model SessionRecording {
+  id              String    @id @default(uuid())
+  roomId          String
+  status          String    @default("IDLE")
+  egressId        String?
+  rawAssetUrl     String?
+  durationSeconds Int?
+  startedAt       DateTime?
+  stoppedAt       DateTime?
+
+  @@index([roomId])
+}
+
+model SessionModeration {
+  id           String   @id @default(uuid())
+  roomId       String
+  targetUserId String
+  actorId      String
+  action       String
+  reason       String?
+  at           DateTime
+
+  @@index([roomId])
+}
+
+// ── Replay (replay-core) ────────────────────────────────────────────────────
+
+model Replay {
+  id                String    @id
+  roomId            String
+  recordingId       String
+  creatorId         String
+  sourceRoomType    String
+  status            String
+  visibility        String
+  rawAssetUrl       String?
+  playbackUrl       String?
+  posterUrl         String?
+  thumbnailUrls     String[]
+  durationSeconds   Int       @default(0)
+  priceCoins        Int?
+  minSubscriberTier String?
+  title             String
+  viewCount         Int       @default(0)
+  pushedToDiscovery Boolean   @default(false)
+  createdAt         DateTime
+  publishedAt       DateTime?
+
+  @@index([recordingId])
+  @@index([creatorId])
+  @@index([pushedToDiscovery, visibility])
+}
+
+// ── Prestige (star-core) ────────────────────────────────────────────────────
+
+model WhiteStarProfile {
+  id                 String   @id @default(uuid())
+  starId             String   @unique
+  score              Int      @default(0)
+  halfStars          Int      @default(1)
+  tierLabel          String
+  factors            Json
+  uploadUsedThisWeek Int      @default(0)
+  weekResetAt        DateTime
+  lastCalculatedAt   DateTime
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([score])
+}
+
+model WhiteStarHistory {
+  id         String   @id @default(uuid())
+  starId     String
+  score      Int
+  halfStars  Int
+  tierLabel  String
+  factors    Json
+  recordedAt DateTime
+
+  @@index([starId])
+}
+
+model StarDecay {
+  id          String   @id @default(uuid())
+  starId      String
+  decayAmount Int
+  scoreBefore Int
+  scoreAfter  Int
+  reason      String
+  appliedAt   DateTime
+
+  @@index([starId])
+}
+
+model WhiteStarSeasonScore {
+  id             String   @id @default(uuid())
+  starId         String
+  seasonId       String
+  seasonName     String
+  finalScore     Int
+  finalHalfStars Int
+  finalTierLabel String
+  rank           Int?
+  resetAt        DateTime
+
+  @@index([starId])
+}
+
+model GoldStarPrestigeProfile {
+  id                    String   @id @default(uuid())
+  starId                String   @unique
+  score                 Int      @default(0)
+  tierLabel             String
+  accountAgeMonths      Int      @default(0)
+  supporterRetentionPct Float    @default(0)
+  countryReach          Int      @default(0)
+  moderationIncidents   Int      @default(0)
+  isVerified            Boolean  @default(false)
+  lastCalculatedAt      DateTime
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([score])
+}
+
+model GoldStarAchievement {
+  id              String   @id @default(uuid())
+  starId          String
+  achievementType String
+  title           String
+  description     String
+  iconUrl         String?
+  unlockedAt      DateTime
+
+  @@index([starId])
+}
+
+model CreatorReputation {
+  id              String   @id @default(uuid())
+  starId          String   @unique
+  whiteStarScore  Int      @default(0)
+  goldStarScore   Int      @default(0)
+  combinedScore   Int      @default(0)
+  platformFeePct  Int      @default(0)
+  weeklyUploadCap Int      @default(0)
+  updatedAt       DateTime @updatedAt
+}
+
+// ── Creator OS (creator-os-core) ────────────────────────────────────────────
+
+model CreatorCalendarEntry {
+  id           String   @id
+  creatorId    String
+  title        String
+  kind         String
+  scheduledFor DateTime
+  status       String   @default("DRAFT")
+  metadata     Json?
+
+  @@index([creatorId])
+}
+
+model CreatorCommerceItem {
+  id         String   @id
+  creatorId  String
+  roomId     String?
+  itemType   String
+  title      String
+  priceCoins Int
+  inventory  Int?
+  sold       Int      @default(0)
+  active     Boolean  @default(true)
+  listedAt   DateTime
+
+  @@index([creatorId])
+  @@index([roomId])
+}
+
+model CreatorCommercePurchase {
+  idempotencyKey String   @id
+  itemId         String
+  buyerId        String
+  createdAt      DateTime @default(now())
+
+  @@index([itemId])
+}
+
+model CreatorClip {
+  id                 String   @id
+  sourceReplayId     String
+  creatorId          String
+  lengthSeconds      Int
+  startOffsetSeconds Int
+  clipUrl            String
+  generatedAt        DateTime
+
+  @@index([sourceReplayId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SPRINT 11 — DOUBLE-ENTRY LEDGER (wallet-core LedgerService)
+// Immutable, hash-chained postings with available/reserved sub-ledgers.
+// Migration: 20260620000000_ledger_analytics
+// ─────────────────────────────────────────────────────────────────────────────
+
+model WalletTransaction {
+  id             String   @id @default(uuid())
+  postingId      String
+  idempotencyKey String
+  reference      String
+  reason         String
+  txnType        String
+  accountId      String
+  accountType    String
+  sub            String // 'available' | 'reserved'
+  direction      String // 'credit' | 'debit'
+  amount         Int
+  currency       String   @default("COINS")
+  balanceAfter   Int
+  previousHash   String
+  hash           String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@unique([idempotencyKey, accountId, sub, direction])
+  @@index([idempotencyKey])
+  @@index([postingId])
+  @@index([accountId, currency])
+  @@index([reference])
+}
+
+model WalletBalanceSnapshot {
+  accountId   String
+  currency    String   @default("COINS")
+  accountType String   @default("customer")
+  available   Int      @default(0)
+  reserved    Int      @default(0)
+  version     Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@id([accountId, currency])
+}
+
+model WalletSettlement {
+  id                 String   @id @default(uuid())
+  idempotencyKey     String   @unique
+  reference          String
+  payerAccountId     String
+  recipientAccountId String
+  grossAmount        Int
+  platformFee        Int
+  recipientAmount    Int
+  platformPercentage Int
+  currency           String   @default("COINS")
+  createdAt          DateTime @default(now())
+
+  @@index([recipientAccountId])
+  @@index([payerAccountId])
+}
+
+model WalletRefund {
+  id                String   @id @default(uuid())
+  idempotencyKey    String   @unique
+  reference         String
+  originalReference String
+  payerAccountId    String
+  amount            Int
+  currency          String   @default("COINS")
+  createdAt         DateTime @default(now())
+
+  @@index([originalReference])
+  @@index([payerAccountId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SPRINT 11 — ANALYTICS PIPELINE (event store + rollups)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AnalyticsEvent {
+  id          String   @id @default(uuid())
+  eventType   String
+  creatorId   String?
+  actorId     String?
+  subjectId   String?
+  subjectType String?
+  value       Int      @default(1)
+  metadata    Json?
+  occurredAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([creatorId, occurredAt])
+  @@index([eventType, occurredAt])
+  @@index([occurredAt])
+}
+
+model AnalyticsRollup {
+  id        String   @id @default(uuid())
+  creatorId String
+  period    String // 'DAY' | 'WEEK' | 'MONTH'
+  periodKey String // e.g. '2026-06-18', '2026-W25', '2026-06'
+  metric    String
+  value     Int      @default(0)
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([creatorId, period, periodKey, metric])
+  @@index([creatorId, period])
 }
