@@ -14,24 +14,13 @@ FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY apps/api/package.json ./apps/api/
 
-# Every package manifest (keeps the workspace graph complete for the lockfile)
-COPY packages/domain-events/package.json    ./packages/domain-events/
-COPY packages/geo-core/package.json         ./packages/geo-core/
-COPY packages/wallet-core/package.json      ./packages/wallet-core/
-COPY packages/gifting-core/package.json     ./packages/gifting-core/
-COPY packages/feed-core/package.json        ./packages/feed-core/
-COPY packages/notification-core/package.json ./packages/notification-core/
-COPY packages/moderation-core/package.json  ./packages/moderation-core/
-COPY packages/analytics-core/package.json   ./packages/analytics-core/
-COPY packages/video-core/package.json       ./packages/video-core/
-COPY packages/search-core/package.json      ./packages/search-core/
-COPY packages/discovery-core/package.json   ./packages/discovery-core/
-COPY packages/support-core/package.json     ./packages/support-core/
-COPY packages/star-core/package.json        ./packages/star-core/
-COPY packages/tap-core/package.json         ./packages/tap-core/
-COPY packages/event-core/package.json       ./packages/event-core/
-COPY packages/arena-core/package.json       ./packages/arena-core/
-COPY packages/creator-os-core/package.json  ./packages/creator-os-core/
+# Copy EVERY workspace package manifest so the pnpm workspace graph is complete
+# before install. The previous hand-maintained per-package list silently dropped
+# 13 packages (companion, messaging, patron, trust, ticketing, live, age-gate,
+# campaign, star, session-engine, session, voting, ranking) and broke
+# `pnpm install --frozen-lockfile`. Copying the whole packages/ tree is resilient
+# to new packages being added without editing the Dockerfile (Sprint 9 fix).
+COPY packages/ ./packages/
 
 RUN pnpm install --frozen-lockfile
 
@@ -72,4 +61,10 @@ COPY --from=build /app/apps/api/package.json ./apps/api/package.json
 
 WORKDIR /app/apps/api
 EXPOSE 3000
+
+# Image-level health check (compose also defines one). Hits the liveness probe;
+# alpine has no curl, so use a tiny inline Node HTTP request.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
+  CMD node -e "require('http').get('http://localhost:'+(process.env.PORT||3000)+'/'+(process.env.API_PREFIX||'api/v1')+'/health/live',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+
 CMD ["node", "dist/main.js"]

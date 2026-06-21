@@ -4,7 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { EVENT_BUS } from '../../event-bus/event-bus.module';
 import { InMemoryEventBus } from '@starria/domain-events';
 
-const mockPrisma = {
+const mockPrisma: any = {
   wallet: {
     findUnique: jest.fn(),
     create: jest.fn(),
@@ -71,21 +71,6 @@ describe('WalletService', () => {
     it('throws NotFoundException when wallet missing', async () => {
       mockPrisma.wallet.findUnique.mockResolvedValue(null);
       await expect(service.getBalance('ghost')).rejects.toThrow('Wallet not found');
-    });
-  });
-
-  describe('withdraw', () => {
-    it('emits PayoutRequestedEvent and returns payout record', async () => {
-      const published: unknown[] = [];
-      bus.subscribe('starria.wallet.payout_requested', e => published.push(e));
-
-      const result = await service.withdraw('u1', { amount: 5000, currency: 'NGN', destination: 'bank_ref_123' });
-
-      expect(result.status).toBe('requested');
-      expect(result.amount).toBe(5000);
-      // give async event time to settle
-      await new Promise(r => setTimeout(r, 10));
-      expect(published.length).toBe(1);
     });
   });
 

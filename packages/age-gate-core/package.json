@@ -1,0 +1,18 @@
+{
+  "name": "@starria/age-gate-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Age Gate — 18+/21+ verification, consent, safe mode, content warnings for STARRIA.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@starria/domain-events": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

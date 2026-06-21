@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Query, Request, UseGuards } from '@nestjs/
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { WalletService } from './wallet.service';
+import { PayoutService } from '../payout/payout.service';
 import { WithdrawDto, WithdrawResponseDto } from './dto/withdraw.dto';
 import { WalletBalanceResponseDto, WalletTransactionsResponseDto } from './dto/wallet-balance.dto';
 import { WalletResponseDto } from './dto/create-wallet.dto';
@@ -11,7 +12,10 @@ import { WalletResponseDto } from './dto/create-wallet.dto';
 @UseGuards(AuthGuard('jwt'))
 @Controller('wallet')
 export class WalletController {
-  constructor(private readonly walletService: WalletService) {}
+  constructor(
+    private readonly walletService: WalletService,
+    private readonly payoutService: PayoutService,
+  ) {}
 
   @Post('create')
   @ApiOperation({ summary: 'Create a wallet for the authenticated user' })
@@ -60,12 +64,22 @@ export class WalletController {
   }
 
   @Post('withdraw')
-  @ApiOperation({ summary: 'Request a fiat withdrawal (payout)' })
+  @ApiOperation({ summary: 'Request a withdrawal (reserves coins and initiates a payout)' })
   @ApiResponse({ status: 201, type: WithdrawResponseDto })
   async withdraw(
     @Request() req: { user: { userId: string } },
     @Body() dto: WithdrawDto,
   ): Promise<WithdrawResponseDto> {
-    return this.walletService.withdraw(req.user.userId, dto);
+    const record = await this.payoutService.requestWithdrawal(req.user.userId, {
+      amount: dto.amount,
+      currency: dto.currency,
+      destination: dto.destination,
+    });
+    return {
+      payoutId: record!.id,
+      status: record!.status,
+      amount: record!.amountCoins,
+      currency: record!.currency,
+    };
   }
 }

@@ -97,6 +97,8 @@ export type ArenaModerationAction = 'mute' | 'unmute' | 'remove' | 'ban' | 'prom
 export interface ArenaModerationInput {
   readonly arenaId: string;
   readonly actorId: string;       // must be Star (host) or admin
+  /** Alias of actorId used by the moderation event payload. */
+  readonly moderatorId?: string;
   readonly targetUserId: string;
   readonly action: ArenaModerationAction;
   readonly reason?: string;

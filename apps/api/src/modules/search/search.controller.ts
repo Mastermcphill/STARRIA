@@ -3,8 +3,10 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SearchService } from '@starria/search-core';
 import { PrismaSearchAdapter } from './prisma-search.adapter';
 import { SearchQueryDto } from './dto/search-query.dto';
+import { Public } from '../auth/public.decorator';
 
 @ApiTags('search')
+@Public()
 @Controller('search')
 export class SearchController {
   private readonly service: SearchService;

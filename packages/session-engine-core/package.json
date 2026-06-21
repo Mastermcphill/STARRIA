@@ -1,0 +1,18 @@
+{
+  "name": "@starria/session-engine-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unified Session Engine — one engine for every room type with billing, moderation, recording & replay hooks.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@starria/domain-events": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

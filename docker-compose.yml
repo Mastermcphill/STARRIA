@@ -51,6 +51,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # Hits the readiness probe (checks DB + Redis). node has no curl in alpine,
+      # so use a tiny inline http request.
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://localhost:3000/api/v1/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     # NOTE: no source bind-mounts here — the production image runs the compiled
     # dist/. Mounting ./apps/api or ./packages would shadow the built output and
     # break `node dist/main.js`. Use a separate dev compose override for watch mode.

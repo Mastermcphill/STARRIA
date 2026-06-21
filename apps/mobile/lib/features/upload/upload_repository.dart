@@ -10,8 +10,8 @@ class UploadRepository {
   final Dio _dio;
   UploadRepository(this._dio);
 
-  /// In the MVP the binary is assumed already uploaded to object storage and
-  /// referenced by [storageKey]; this registers + processes + publishes it.
+  /// Register + process + publish a video. [storageKey] is the R2 object key
+  /// returned by [MediaRepository.pickAndUpload].
   Future<Map<String, dynamic>> upload({
     required String title,
     String? description,

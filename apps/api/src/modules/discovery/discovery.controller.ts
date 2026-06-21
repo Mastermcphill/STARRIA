@@ -11,8 +11,10 @@ import { resolveLocation } from '@starria/geo-core';
 import { PrismaDiscoveryFeedAdapter } from './prisma-discovery-feed.adapter';
 import { PrismaTrendingStoreAdapter } from './prisma-trending-store.adapter';
 import { VerticalFeedQueryDto, LocalFeedQueryDto } from './dto/discovery-query.dto';
+import { Public } from '../auth/public.decorator';
 
 @ApiTags('discovery')
+@Public()
 @Controller('discovery')
 export class DiscoveryController {
   private readonly discovery: DiscoveryService;

@@ -5,9 +5,18 @@
 // ---------------------------------------------------------------------------
 
 import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { CoinLedgerPort, CoinMovementInput, CoinBalance } from '@starria/gifting-core';
 import { PrismaService } from '../../prisma/prisma.service';
-import { buildLedgerEntry, LEDGER_GENESIS_HASH } from '@starria/wallet-core';
+import { appendWalletEntry } from './wallet-ledger';
+
+// Both debit and credit read the current balance and then write a new absolute
+// value, so they MUST run under Serializable isolation — otherwise two
+// concurrent debits can both read the same balance and lost-update, letting a
+// user spend the same coins twice (double-spend).
+const SERIALIZABLE = {
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+} as const;
 
 @Injectable()
 export class PrismaCoinLedgerRepository implements CoinLedgerPort {
@@ -37,37 +46,12 @@ export class PrismaCoinLedgerRepository implements CoinLedgerPort {
       }
 
       const newBalance = wallet.coinBalance - input.amount;
-      const lastEntry = await tx.walletEntry.findFirst({
-        where: { walletId: wallet.id, type: 'DEBIT' },
-        orderBy: { createdAt: 'desc' },
-        select: { hash: true },
-      });
-      const previousHash = lastEntry?.hash ?? LEDGER_GENESIS_HASH;
-
-      const ledgerEntry = buildLedgerEntry({
-        sequence: 0, // sequence tracking can be added; 0 is safe for now
-        accountId: input.userId,
-        accountType: 'customer',
-        direction: 'debit',
-        amount: input.amount,
-        currency: 'COINS',
-        balanceAfter: newBalance,
-        reference: input.referenceId ?? input.idempotencyKey,
-        reason: 'payment_split',
-        previousHash,
-        metadata: { reason: input.reason },
-      });
-
-      await tx.walletEntry.create({
-        data: {
-          walletId: wallet.id,
-          type: 'DEBIT',
-          coinAmount: input.amount,
-          description: input.reason,
-          previousHash,
-          hash: ledgerEntry.hash,
-          idempotencyKey: input.idempotencyKey,
-        },
+      await appendWalletEntry(tx, {
+        walletId: wallet.id,
+        type: 'DEBIT',
+        coinAmount: input.amount,
+        description: input.reason,
+        idempotencyKey: input.idempotencyKey,
       });
 
       const updated = await tx.wallet.update({
@@ -76,7 +60,7 @@ export class PrismaCoinLedgerRepository implements CoinLedgerPort {
       });
 
       return { userId: input.userId, balance: updated.coinBalance };
-    });
+    }, SERIALIZABLE);
   }
 
   async credit(input: CoinMovementInput): Promise<CoinBalance> {
@@ -95,37 +79,12 @@ export class PrismaCoinLedgerRepository implements CoinLedgerPort {
       if (existing) return { userId: input.userId, balance: wallet.coinBalance };
 
       const newBalance = wallet.coinBalance + input.amount;
-      const lastEntry = await tx.walletEntry.findFirst({
-        where: { walletId: wallet.id, type: 'CREDIT' },
-        orderBy: { createdAt: 'desc' },
-        select: { hash: true },
-      });
-      const previousHash = lastEntry?.hash ?? LEDGER_GENESIS_HASH;
-
-      const ledgerEntry = buildLedgerEntry({
-        sequence: 0,
-        accountId: input.userId,
-        accountType: 'customer',
-        direction: 'credit',
-        amount: input.amount,
-        currency: 'COINS',
-        balanceAfter: newBalance,
-        reference: input.referenceId ?? input.idempotencyKey,
-        reason: 'payment_split',
-        previousHash,
-        metadata: { reason: input.reason },
-      });
-
-      await tx.walletEntry.create({
-        data: {
-          walletId: wallet.id,
-          type: 'CREDIT',
-          coinAmount: input.amount,
-          description: input.reason,
-          previousHash,
-          hash: ledgerEntry.hash,
-          idempotencyKey: input.idempotencyKey,
-        },
+      await appendWalletEntry(tx, {
+        walletId: wallet.id,
+        type: 'CREDIT',
+        coinAmount: input.amount,
+        description: input.reason,
+        idempotencyKey: input.idempotencyKey,
       });
 
       const updated = await tx.wallet.update({
@@ -134,6 +93,6 @@ export class PrismaCoinLedgerRepository implements CoinLedgerPort {
       });
 
       return { userId: input.userId, balance: updated.coinBalance };
-    });
+    }, SERIALIZABLE);
   }
 }

@@ -136,7 +136,7 @@ describe('CoinGiftingService', () => {
     it('emits CoinGiftSentEvent after successful gift', async () => {
       const bus = new InMemoryEventBus();
       const events: unknown[] = [];
-      bus.subscribe(GIFT_COIN_SENT, e => events.push(e));
+      bus.subscribe(GIFT_COIN_SENT, e => { events.push(e); });
 
       const ledger = makeLedger({ sender: 200 });
       const service = new CoinGiftingService(ledger, createCommissionConfig(40), undefined, bus);

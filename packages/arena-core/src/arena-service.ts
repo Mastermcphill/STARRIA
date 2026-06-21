@@ -230,7 +230,7 @@ export class ArenaService {
     void this.eventBus?.publish(buildParticipantModeratedEvent({
       recordId: record.id,
       arenaId: input.arenaId,
-      moderatorId: input.moderatorId,
+      moderatorId: input.moderatorId ?? input.actorId,
       targetUserId: input.targetUserId,
       action: input.action,
       reason: input.reason,

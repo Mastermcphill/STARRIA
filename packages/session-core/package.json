@@ -1,0 +1,19 @@
+{
+  "name": "@starria/session-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Session Economy — booking, escrow, timer, extensions, payouts, participant management.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@starria/domain-events": "workspace:*",
+    "@starria/companion-core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

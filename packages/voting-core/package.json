@@ -1,0 +1,18 @@
+{
+  "name": "@starria/voting-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Battle voting engine — weighted votes, fraud detection, anti-bot, patron multipliers.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@starria/domain-events": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

@@ -21,6 +21,9 @@ dependencies:
   # Networking
   dio: ^5.4.0
   retrofit: ^4.1.0
+  # Used directly by Sprint 5–8 feature screens (arenas, companion, messaging,
+  # patron, creator_os, trust, presence, replay). Was missing — broke the build.
+  http: ^1.2.0
 
   # Auth / Storage
   flutter_secure_storage: ^9.0.0
@@ -28,6 +31,8 @@ dependencies:
 
   # Live video (Arenas)
   livekit_client: ^2.1.0
+  # WebRTC view-fit enum for VideoTrackRenderer (Sprint 7)
+  flutter_webrtc: ^0.14.0
 
   # UI
   cached_network_image: ^3.3.0
@@ -50,6 +55,9 @@ dependencies:
   equatable: ^2.0.5
   freezed_annotation: ^2.4.0
   json_annotation: ^4.9.0
+  firebase_auth: ^5.7.0
+  firebase_crashlytics: ^4.3.10
+  file_picker: ^8.1.2
 
 dev_dependencies:
   flutter_test:

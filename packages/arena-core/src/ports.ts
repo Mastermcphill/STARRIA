@@ -21,7 +21,15 @@ import type {
 export interface ArenaStorePort {
   findById(arenaId: string): Promise<ArenaRecord | undefined>;
   findByLivekitRoom(roomName: string): Promise<ArenaRecord | undefined>;
-  create(input: CreateArenaInput & { id: string; livekitRoom: string; createdAt: string; updatedAt: string }): Promise<ArenaRecord>;
+  create(input: CreateArenaInput & {
+    id: string;
+    livekitRoom: string;
+    createdAt: string;
+    updatedAt?: string;
+    currentParticipantCount?: number;
+    totalParticipantCount?: number;
+    status?: ArenaRecord['status'];
+  }): Promise<ArenaRecord>;
   update(arenaId: string, input: UpdateArenaInput): Promise<ArenaRecord>;
   updateStatus(arenaId: string, status: ArenaRecord['status']): Promise<ArenaRecord>;
   incrementParticipants(arenaId: string, delta: number): Promise<void>;
@@ -34,7 +42,7 @@ export interface ArenaStorePort {
 
 export interface ArenaParticipantPort {
   findActive(arenaId: string, userId: string): Promise<ArenaParticipant | undefined>;
-  join(input: JoinArenaInput & { id: string; role: ArenaParticipant['role']; joinedAt: string }): Promise<ArenaParticipant>;
+  join(input: JoinArenaInput & { id: string; role: ArenaParticipant['role']; joinedAt: string; status?: ArenaParticipant['status'] }): Promise<ArenaParticipant>;
   leave(arenaId: string, userId: string, leftAt: string): Promise<ArenaParticipant | undefined>;
   listActive(arenaId: string): Promise<ArenaParticipant[]>;
   countActive(arenaId: string): Promise<number>;

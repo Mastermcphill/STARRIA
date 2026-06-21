@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "232052258546",
+    "project_id": "starria",
+    "storage_bucket": "starria.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:232052258546:android:c26ddb9740c6e09ecbc26b",
+        "android_client_info": {
+          "package_name": "com.starria.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC4vWZDr199Awnnm29PHyt4FjS34ZzcLHc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

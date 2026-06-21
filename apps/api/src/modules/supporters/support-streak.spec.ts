@@ -78,9 +78,9 @@ describe('Streak simulation', () => {
 
   it('tracks longest streak across a reset', () => {
     const streak1 = [0, 1, 2, 3, 4, 5, 6].map(d => advanceDays(base, d)); // 7 days
-    const gap = advanceDays(base, 10);                                       // broken
-    const streak2 = [11, 12].map(d => advanceDays(base, d));                 // 2 days
-    const { longestStreakDays, currentStreakDays } = simulateStreak([...streak1, gap, ...streak2]);
+    // No gifts on days 7-9 — that absence (>25h since day 6) is what breaks the streak.
+    const streak2 = [10, 11].map(d => advanceDays(base, d));              // fresh 2-day streak
+    const { longestStreakDays, currentStreakDays } = simulateStreak([...streak1, ...streak2]);
     expect(longestStreakDays).toBe(7);
     expect(currentStreakDays).toBe(2);
   });
@@ -136,7 +136,7 @@ describe('SupportStreakAchievedEvent shape', () => {
   it('is emitted with correct payload by InMemoryEventBus', async () => {
     const bus = new InMemoryEventBus();
     const received: SupportStreakAchievedEvent[] = [];
-    bus.subscribe<SupportStreakAchievedEvent>(SUPPORTER_STREAK_ACHIEVED, e => received.push(e));
+    bus.subscribe<SupportStreakAchievedEvent>(SUPPORTER_STREAK_ACHIEVED, e => { received.push(e); });
 
     const { buildStreakAchievedEvent } = await import('@starria/support-core');
     const event = buildStreakAchievedEvent({
@@ -161,7 +161,7 @@ describe('SupportAnniversaryEvent shape', () => {
   it('is emitted with a human-readable message', async () => {
     const bus = new InMemoryEventBus();
     const received: SupportAnniversaryEvent[] = [];
-    bus.subscribe<SupportAnniversaryEvent>(SUPPORTER_ANNIVERSARY, e => received.push(e));
+    bus.subscribe<SupportAnniversaryEvent>(SUPPORTER_ANNIVERSARY, e => { received.push(e); });
 
     const { buildAnniversaryEvent } = await import('@starria/support-core');
     const event = buildAnniversaryEvent({
@@ -182,7 +182,7 @@ describe('SupportAnniversaryEvent shape', () => {
   });
 
   it('uses plural "years" for multi-year anniversaries', () => {
-    const years = 3;
+    const years: number = 3;
     const message = `You've been a supporter for ${years} ${years === 1 ? 'year' : 'years'}! 🎉`;
     expect(message).toContain('3 years');
   });

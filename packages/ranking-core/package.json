@@ -1,0 +1,15 @@
+{
+  "name": "@starria/ranking-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Creator ELO calculations, division placement, seasonal resets and decay for STARRIA arenas.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --project tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}
