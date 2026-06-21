@@ -36,13 +36,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # pnpm version comes from package.json "packageManager" (pnpm@9.0.0) —
+      # do NOT also set "version" here or the action errors on a mismatch.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -76,9 +76,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Latest stable Flutter — the app's deps (flutter_webrtc, livekit_client)
+      # require Dart >=3.6, newer than the 3.22.0/Dart 3.4 we'd otherwise pin.
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.22.0"
           channel: stable
           cache: true
 
